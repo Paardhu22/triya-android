@@ -8,6 +8,9 @@ export type { IconProps, IconName } from './Icon';
 export { Button } from './Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
 
+export { PressableScale } from './PressableScale';
+export type { PressableScaleProps } from './PressableScale';
+
 export { TextInput } from './TextInput';
 export type { TextInputProps } from './TextInput';
 
@@ -40,9 +43,6 @@ export type { FilterChipsProps, ChipOption } from './FilterChips';
 export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedControlProps, SegmentOption } from './SegmentedControl';
 
-export { Tabs } from './Tabs';
-export type { TabsProps, TabOption } from './Tabs';
-
 export { PropertySelector } from './PropertySelector';
 export type { PropertySelectorProps } from './PropertySelector';
 
@@ -53,15 +53,9 @@ export type { ListItemProps } from './ListItem';
 export { StatCard } from './StatCard';
 export type { StatCardProps } from './StatCard';
 
-export { MetricCard } from './MetricCard';
-export type { MetricCardProps } from './MetricCard';
-
 // Feedback
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
-
-export { LoadingState } from './LoadingState';
-export type { LoadingStateProps } from './LoadingState';
 
 export { ErrorState } from './ErrorState';
 export type { ErrorStateProps } from './ErrorState';
@@ -81,6 +75,15 @@ export type { ConfirmDialogProps } from './ConfirmDialog';
 
 export { SuccessDialog } from './SuccessDialog';
 export type { SuccessDialogProps } from './SuccessDialog';
+
+// Motion presets
+export {
+  enterScreen,
+  enterHeader,
+  enterItem,
+  enterUp,
+  layoutTransition,
+} from './motion';
 
 // Domain cards
 export * from './cards';
