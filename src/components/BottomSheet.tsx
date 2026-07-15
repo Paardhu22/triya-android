@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -62,13 +63,15 @@ export function BottomSheet({
       setMounted(true);
       Animated.timing(progress, {
         toValue: 1,
-        duration: 240,
+        duration: 260,
+        easing: Easing.bezier(0.2, 0, 0, 1),
         useNativeDriver: true,
       }).start();
     } else {
       Animated.timing(progress, {
         toValue: 0,
         duration: 180,
+        easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) setMounted(false);
