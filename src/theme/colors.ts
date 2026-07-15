@@ -24,13 +24,21 @@ export const colors = {
 
   // Semantic
   success: '#16A34A',
+  successLight: '#F0FDF4',
   warning: '#D97706',
+  warningLight: '#FFFBEB',
   error: '#DC2626',
+  errorLight: '#FEF2F2',
+  neutral: '#9CA3AF',
+  neutralLight: '#F3F4F6',
 
   // Borders & Dividers
   border: '#E5E7EB',
   borderLight: '#F3F4F6',
   divider: '#E5E7EB',
+
+  // Overlays
+  overlay: 'rgba(15, 23, 42, 0.45)',
 } as const;
 
 export type ColorToken = keyof typeof colors;
