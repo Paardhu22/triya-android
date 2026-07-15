@@ -1,15 +1,17 @@
+import { useCallback } from 'react';
 import { View, FlatList, StyleSheet, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import Animated from 'react-native-reanimated';
 
+import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { Icon, type IconName } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
-import { TabHeader } from '@/screens/shared/TabHeader';
 import { Typography } from '@/components/Typography';
+import { enterItem } from '@/components/motion';
 import { useNotifications, useAction } from '@/hooks';
-import { markNotificationRead } from '@/mocks/actions';
+import { markAllNotificationsRead, markNotificationRead } from '@/mocks/actions';
 import { useActiveProperty } from '@/store';
-import { colors, spacing, borderRadius } from '@/theme';
+import { colors, spacing, borderRadius, fontFamilies } from '@/theme';
 import { formatRelative } from '@/utils';
 import type { AppNotification } from '@/types';
 
@@ -57,11 +59,19 @@ function NotificationItem({ notification, onPress }: { notification: AppNotifica
 }
 
 export function NotificationsScreen() {
-  const router = useRouter();
   const property = useActiveProperty();
-  const { data: notifications = [], refetch } = useNotifications(property.id);
+  const {
+    data: notificationsData,
+    isRefreshing,
+    refresh,
+    refetch,
+  } = useNotifications(property.id);
+  const notifications = notificationsData ?? [];
 
-  const { busy: isMarking, run: runMark } = useAction();
+  const { run: runMark } = useAction();
+  const { busy: isMarkingAll, run: runMarkAll } = useAction();
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handlePress = (notification: AppNotification) => {
     if (!notification.read) {
@@ -69,33 +79,62 @@ export function NotificationsScreen() {
     }
   };
 
+  const handleMarkAll = () => {
+    runMarkAll(() => markAllNotificationsRead(property.id)).then(() => refetch());
+  };
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: AppNotification; index: number }) => (
+      <Animated.View entering={enterItem(index)}>
+        <NotificationItem notification={item} onPress={() => handlePress(item)} />
+      </Animated.View>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   return (
-    <Screen edges={['top']} padded={false}>
-      <TabHeader title="Notifications" />
+    <Screen edges={[]} padded={false}>
+      {unreadCount > 0 && (
+        <View style={styles.toolbar}>
+          <Typography variant="caption" color="textSecondary">
+            {unreadCount} unread
+          </Typography>
+          <Button
+            title="Mark all read"
+            variant="outline"
+            size="sm"
+            icon="check-all"
+            loading={isMarkingAll}
+            onPress={handleMarkAll}
+          />
+        </View>
+      )}
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <NotificationItem
-            notification={item}
-            onPress={() => handlePress(item)}
-          />
-        )}
-        ListEmptyComponent={
-          <EmptyState
-            title="All caught up!"
-            icon="bell-outline"
-          />
-        }
+        renderItem={renderItem}
+        onRefresh={refresh}
+        refreshing={isRefreshing}
+        ListEmptyComponent={<EmptyState title="All caught up!" icon="bell-outline" />}
       />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   list: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xxl,
     gap: spacing.sm,
   },
@@ -140,6 +179,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textUnread: {
-    fontWeight: '600',
+    fontFamily: fontFamilies.semibold,
   },
 });
