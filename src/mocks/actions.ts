@@ -364,6 +364,12 @@ export interface AssignTenantInput {
   securityDeposit?: number | null;
   checkInDate: string;
   paymentStatus: Extract<PaymentStatus, 'PAID' | 'PENDING'>;
+  /** How the first cycle was received, when paymentStatus is PAID. */
+  paymentMethod?: PaymentMethod;
+  /** Paise. Required when paymentMethod is SPLIT. */
+  cashAmount?: number;
+  /** Paise. Required when paymentMethod is SPLIT. */
+  onlineAmount?: number;
   recordedByName?: string;
 }
 
@@ -379,6 +385,12 @@ export function assignTenantToBed(input: AssignTenantInput): ActionResult<{ tena
   }
   if (!Number.isInteger(input.monthlyRent) || input.monthlyRent <= 0) {
     return err('Monthly rent must be greater than zero.');
+  }
+  if (input.paymentStatus === 'PAID' && input.paymentMethod === 'SPLIT') {
+    const total = input.monthlyRent + (input.maintenanceCharge ?? 0);
+    if ((input.cashAmount ?? 0) + (input.onlineAmount ?? 0) !== total) {
+      return err('Split amounts must add up to the total due.');
+    }
   }
 
   const now = new Date().toISOString();
@@ -426,7 +438,13 @@ export function assignTenantToBed(input: AssignTenantInput): ActionResult<{ tena
 
   if (input.paymentStatus === 'PAID') {
     tenancy.paymentStatus = 'PENDING';
-    markRentPaid({ tenancyId: tenancy.id, recordedByName: input.recordedByName });
+    markRentPaid({
+      tenancyId: tenancy.id,
+      method: input.paymentMethod,
+      cashAmount: input.cashAmount,
+      onlineAmount: input.onlineAmount,
+      recordedByName: input.recordedByName,
+    });
   }
 
   const room = db.rooms.find((r) => r.id === bed.roomId);
