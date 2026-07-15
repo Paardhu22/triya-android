@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { View, StyleSheet } from 'react-native';
 
 import { Typography } from '@/components/Typography';
-import { borderRadius, colors } from '@/theme';
+import { borderRadius, colors, fontFamilies } from '@/theme';
 
 export type AvatarSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -29,14 +29,17 @@ const FONT_SIZE: Record<AvatarSize, number> = {
   xl: 26,
 };
 
-/** Soft, readable tints cycled deterministically per name. */
+/**
+ * Soft, readable tints cycled deterministically per name — restricted to the
+ * app's warm palette family so avatars never introduce off-brand hues.
+ */
 const TINTS = [
-  { background: '#EFF6FF', text: '#1D4ED8' }, // blue
-  { background: '#F0FDF4', text: '#15803D' }, // green
+  { background: '#EFEAE2', text: '#7A5C3E' }, // warm tan
+  { background: '#E6EFE5', text: '#4D8A4C' }, // sage
   { background: '#FEF3C7', text: '#B45309' }, // amber
-  { background: '#FCE7F3', text: '#BE185D' }, // pink
-  { background: '#EDE9FE', text: '#6D28D9' }, // violet
-  { background: '#ECFEFF', text: '#0E7490' }, // cyan
+  { background: '#F6E4E1', text: '#A84343' }, // clay
+  { background: '#E8E9EF', text: '#2C3040' }, // ink
+  { background: '#F5F5F3', text: '#6B7280' }, // stone
 ] as const;
 
 function initialsOf(name: string): string {
@@ -90,7 +93,7 @@ export function Avatar({ name, uri, size = 'md' }: AvatarProps) {
     >
       <Typography
         colorValue={tint.text}
-        style={{ fontSize: FONT_SIZE[size], fontWeight: '600' }}
+        style={{ fontSize: FONT_SIZE[size], fontFamily: fontFamilies.semibold }}
       >
         {initialsOf(name)}
       </Typography>
