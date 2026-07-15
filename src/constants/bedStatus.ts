@@ -33,10 +33,10 @@ export interface BedVisualStatusMeta {
 }
 
 export const BED_VISUAL_STATUS_META: Record<BedVisualStatus, BedVisualStatusMeta> = {
-  paid: { label: 'Paid', color: colors.success, softColor: colors.successLight },
-  pending: { label: 'Pending', color: colors.warning, softColor: colors.warningLight },
-  overdue: { label: 'Overdue', color: colors.error, softColor: colors.errorLight },
-  vacant: { label: 'Vacant', color: colors.neutral, softColor: colors.neutralLight },
+  paid: { label: 'Paid', color: colors.bedPaid, softColor: colors.bedPaidSoft },
+  pending: { label: 'Pending', color: colors.bedPending, softColor: colors.bedPendingSoft },
+  overdue: { label: 'Overdue', color: colors.bedOverdue, softColor: colors.bedOverdueSoft },
+  vacant: { label: 'Vacant', color: colors.bedVacant, softColor: colors.bedVacantSoft },
 };
 
 /** Ordered list for legends / filters. */
