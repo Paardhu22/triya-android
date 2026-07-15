@@ -26,6 +26,8 @@ export interface ScreenProps extends ViewProps {
    * header already clears the status bar; tab screens typically pass ['top'].
    */
   edges?: Edge[];
+  /** Screen background color. Defaults to the app background (white). */
+  background?: string;
 }
 
 /**
@@ -54,6 +56,7 @@ export function Screen({
   padded = true,
   keyboardAvoiding = true,
   edges,
+  background,
   style,
   children,
   ...rest
@@ -90,7 +93,10 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={edges}>
+    <SafeAreaView
+      style={[styles.safeArea, background != null && { backgroundColor: background }]}
+      edges={edges}
+    >
       {wrappedContent}
     </SafeAreaView>
   );
