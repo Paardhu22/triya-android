@@ -1,8 +1,11 @@
-import { Text, type TextProps, StyleSheet } from 'react-native';
+import { Text, type TextProps } from 'react-native';
 
-import { colors, typography as typographyTokens } from '@/theme';
-import type { TypographyVariant } from '@/theme';
-import type { ColorToken } from '@/theme';
+import {
+  colors,
+  typography as typographyTokens,
+  type ColorToken,
+  type TypographyVariant,
+} from '@/theme';
 
 export interface TypographyProps extends TextProps {
   /** Typography variant from the design system scale. */
@@ -34,7 +37,6 @@ export function Typography({
   return (
     <Text
       style={[
-        styles.base,
         typographyTokens[variant],
         { color: colorValue ?? colors[color] },
         style,
@@ -43,11 +45,3 @@ export function Typography({
     />
   );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    // Ensures text is rendered with the system font by default.
-    // On Android this is Roboto; on iOS this is SF Pro.
-    fontFamily: undefined,
-  },
-});
