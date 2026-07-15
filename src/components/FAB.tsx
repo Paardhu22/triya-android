@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
+import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
 
@@ -25,13 +26,10 @@ export interface FABProps {
  */
 export function FAB({ icon = 'plus', label, onPress, accessibilityLabel }: FABProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.fab,
-        label ? styles.extended : styles.round,
-        pressed && styles.pressed,
-      ]}
+      scaleTo={0.94}
+      style={[styles.fab, label ? styles.extended : styles.round]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
     >
@@ -41,7 +39,7 @@ export function FAB({ icon = 'plus', label, onPress, accessibilityLabel }: FABPr
           {label}
         </Typography>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -70,9 +68,5 @@ const styles = StyleSheet.create({
     height: 52,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.full,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
   },
 });
