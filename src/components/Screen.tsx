@@ -6,7 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme';
 
@@ -20,6 +20,12 @@ export interface ScreenProps extends ViewProps {
    * when the software keyboard is visible. Defaults to true.
    */
   keyboardAvoiding?: boolean;
+  /**
+   * Safe-area edges to inset. Defaults to all edges (standalone screens).
+   * Screens under a native header should pass ['bottom'] or [] since the
+   * header already clears the status bar; tab screens typically pass ['top'].
+   */
+  edges?: Edge[];
 }
 
 /**
@@ -47,6 +53,7 @@ export function Screen({
   scrollable = false,
   padded = true,
   keyboardAvoiding = true,
+  edges,
   style,
   children,
   ...rest
@@ -83,7 +90,7 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={edges}>
       {wrappedContent}
     </SafeAreaView>
   );
