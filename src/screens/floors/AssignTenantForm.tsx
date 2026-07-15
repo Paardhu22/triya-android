@@ -7,6 +7,7 @@ import { assignTenantToBed } from '@/mocks';
 import { useAuth } from '@/store';
 import { colors, spacing } from '@/theme';
 import { formatINR, rupeesToPaise, toISODateOnly, MAINTENANCE_RESERVE_PAISE } from '@/utils';
+import type { PaymentMethod } from '@/types';
 
 export interface AssignTenantFormProps {
   bedId: string;
@@ -38,6 +39,9 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
   const [deposit, setDeposit] = useState('');
   const [checkInDate, setCheckInDate] = useState(toISODateOnly());
   const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID'>('PENDING');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
+  const [cashAmount, setCashAmount] = useState('');
+  const [onlineAmount, setOnlineAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +64,15 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
         securityDeposit: deposit.trim() ? parseRupees(deposit) : null,
         checkInDate: new Date(`${checkInDate.trim()}T00:00:00`).toISOString(),
         paymentStatus,
+        paymentMethod: paymentStatus === 'PAID' ? paymentMethod : undefined,
+        cashAmount:
+          paymentStatus === 'PAID' && paymentMethod === 'SPLIT'
+            ? parseRupees(cashAmount)
+            : undefined,
+        onlineAmount:
+          paymentStatus === 'PAID' && paymentMethod === 'SPLIT'
+            ? parseRupees(onlineAmount)
+            : undefined,
         recordedByName: user?.name,
       }),
     );
@@ -151,6 +164,45 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
           onChange={setPaymentStatus}
         />
       </View>
+
+      {paymentStatus === 'PAID' && (
+        <View style={styles.statusBlock}>
+          <Typography variant="captionMedium" color="textSecondary">
+            Payment method
+          </Typography>
+          <SegmentedControl
+            options={[
+              { value: 'CASH', label: 'Cash' },
+              { value: 'ONLINE', label: 'Online' },
+              { value: 'SPLIT', label: 'Split' },
+            ]}
+            value={paymentMethod}
+            onChange={setPaymentMethod}
+          />
+          {paymentMethod === 'SPLIT' && (
+            <View style={styles.twoCol}>
+              <View style={styles.col}>
+                <TextInput
+                  label="Cash (₹)"
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={cashAmount}
+                  onChangeText={setCashAmount}
+                />
+              </View>
+              <View style={styles.col}>
+                <TextInput
+                  label="Online (₹)"
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={onlineAmount}
+                  onChangeText={setOnlineAmount}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
       {error && (
         <Typography variant="caption" colorValue={colors.error}>
