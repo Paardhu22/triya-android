@@ -20,8 +20,7 @@ export interface StatCardProps {
 /**
  * StatCard component.
  *
- * Compact metric tile for dashboard grids: icon, label, value, caption.
- * For the hero metric with a progress bar use MetricCard.
+ * Compact metric tile for summary rows: icon, label, value, caption.
  *
  * @example
  * <StatCard icon="cash-multiple" label="Collections (month)" value="₹8.9L" caption="96 paid · 52 unpaid" />
