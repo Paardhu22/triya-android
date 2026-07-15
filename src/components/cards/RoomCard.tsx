@@ -56,7 +56,7 @@ export function RoomCard({ room, isFlat, onPress }: RoomCardProps) {
       )}
 
       <Typography variant="small" color="textSecondary">
-        {isFlat ? flatStatus?.label ?? 'Flat' : `${room.beds.length} Sharing`}
+        {isFlat ? 'Flat' : `${room.beds.length} Sharing`}
       </Typography>
     </Pressable>
   );
