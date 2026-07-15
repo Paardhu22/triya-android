@@ -35,3 +35,5 @@ export {
   defaultDueDate,
 } from './invoice';
 export type { InvoiceChargesPaise } from './invoice';
+
+export { bedLocationLabel, bedLocationShort, roomLabel } from './labels';

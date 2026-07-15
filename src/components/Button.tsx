@@ -5,6 +5,7 @@ import {
   type PressableProps,
 } from 'react-native';
 
+import { Icon, type IconName } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
 
@@ -18,6 +19,8 @@ export interface ButtonProps extends Omit<PressableProps, 'children'> {
   variant?: ButtonVariant;
   /** Size preset. Defaults to 'md'. */
   size?: ButtonSize;
+  /** Optional leading icon. */
+  icon?: IconName;
   /** Shows a spinner and disables interaction. */
   loading?: boolean;
   /** Fully disables the button. */
@@ -47,6 +50,7 @@ export function Button({
   title,
   variant = 'primary',
   size = 'md',
+  icon,
   loading = false,
   disabled = false,
   style,
@@ -80,9 +84,22 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={spinnerColor} size="small" />
       ) : (
-        <Typography variant="button" colorValue={textColor}>
-          {title}
-        </Typography>
+        <>
+          {icon && (
+            <Icon
+              name={icon}
+              size={size === 'sm' ? 16 : 18}
+              color={textColor}
+              style={styles.icon}
+            />
+          )}
+          <Typography
+            variant={size === 'sm' ? 'captionMedium' : 'button'}
+            colorValue={textColor}
+          >
+            {title}
+          </Typography>
+        </>
       )}
     </Pressable>
   );
@@ -95,6 +112,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.lg,
+  },
+  icon: {
+    marginRight: spacing.sm,
   },
   primary: {
     backgroundColor: colors.primary,
