@@ -26,7 +26,9 @@ export function MoreScreen() {
           <View style={styles.profileSection}>
             <Avatar name={user.name} size="lg" />
             <Typography variant="h2" style={styles.name}>{user.name}</Typography>
-            <Typography variant="bodyMedium" color="textSecondary">{user.role}</Typography>
+            <Typography variant="bodyMedium" color="textSecondary" style={styles.role}>
+              {user.role.toLowerCase()}
+            </Typography>
           </View>
         )}
 
@@ -39,10 +41,10 @@ export function MoreScreen() {
               onPress={() => router.push('/(main)/complaints' as any)} 
             />
             <Divider style={{ marginVertical: 0 }} />
-            <ListItem 
-              title="Expenses" 
-              icon="receipt" 
-              onPress={() => router.push('/(main)/expenses' as any)} 
+            <ListItem
+              title="Expense Tracker"
+              icon="receipt"
+              onPress={() => router.push('/(main)/expenses' as any)}
             />
           </Card>
         </View>
@@ -81,6 +83,9 @@ const styles = StyleSheet.create({
   name: {
     marginTop: spacing.md,
     marginBottom: spacing.xs,
+  },
+  role: {
+    textTransform: 'capitalize',
   },
   section: {
     marginBottom: spacing.xl,
