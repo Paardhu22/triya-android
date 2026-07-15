@@ -1,11 +1,7 @@
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  type PressableProps,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, type PressableProps } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
+import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
 
@@ -25,6 +21,11 @@ export interface ButtonProps extends Omit<PressableProps, 'children'> {
   loading?: boolean;
   /** Fully disables the button. */
   disabled?: boolean;
+  /**
+   * Overrides the label/icon color — for buttons on non-standard surfaces
+   * (e.g. an outline button on the ink backdrop).
+   */
+  textColor?: string;
 }
 
 const HEIGHT: Record<ButtonSize, number> = {
@@ -53,27 +54,27 @@ export function Button({
   icon,
   loading = false,
   disabled = false,
+  textColor: textColorOverride,
   style,
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
   const textColor =
-    variant === 'primary' ? colors.textInverse : colors.text;
+    textColorOverride ?? (variant === 'primary' ? colors.textInverse : colors.text);
 
   const spinnerColor =
-    variant === 'primary' ? colors.textInverse : colors.primary;
+    variant === 'primary' ? colors.textInverse : (textColorOverride ?? colors.primary);
 
   return (
-    <Pressable
-      style={({ pressed }) => [
+    <PressableScale
+      style={[
         styles.base,
         { height: HEIGHT[size] },
         variant === 'primary' && styles.primary,
         variant === 'secondary' && styles.secondary,
         variant === 'outline' && styles.outline,
         isDisabled && styles.disabled,
-        pressed && !isDisabled && styles.pressed,
         style as import('react-native').ViewStyle,
       ]}
       disabled={isDisabled}
@@ -101,7 +102,7 @@ export function Button({
           </Typography>
         </>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -129,8 +130,5 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
-  },
-  pressed: {
-    opacity: 0.8,
   },
 });
