@@ -4,12 +4,13 @@ import type { ColorValue } from 'react-native';
 import { Icon, type IconName } from '@/components';
 import { useUnreadNotificationCount } from '@/hooks';
 import { useActiveProperty } from '@/store';
-import { colors } from '@/theme';
+import { colors, fontFamilies } from '@/theme';
 
 function tabIcon(focusedName: IconName, name: IconName) {
-  return ({ color, focused }: { color: ColorValue; focused: boolean }) => (
-    <Icon name={focused ? focusedName : name} size={24} color={color as string} />
-  );
+  function TabBarIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return <Icon name={focused ? focusedName : name} size={24} color={color as string} />;
+  }
+  return TabBarIcon;
 }
 
 /**
@@ -25,13 +26,14 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        animation: 'shift',
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: colors.borderLight,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+        tabBarLabelStyle: { fontSize: 11, fontFamily: fontFamilies.medium },
       }}
     >
       <Tabs.Screen
