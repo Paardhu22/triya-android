@@ -16,7 +16,6 @@ import type {
   Payment,
   PaymentStatus,
   Property,
-  Room,
   Tenancy,
   Tenant,
   User,
