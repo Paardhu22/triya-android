@@ -22,7 +22,6 @@ import type {
   Invoice,
   Payment,
   PaymentMethod,
-  PaymentStatus,
   Property,
   Room,
   Tenancy,
@@ -41,8 +40,11 @@ import {
   vacateByDate,
   computeInvoiceTotals,
   defaultDueDate,
+  invoiceBalancePaise,
+  monthlyDuePaise,
   MAINTENANCE_RESERVE_PAISE,
 } from '@/utils';
+import { recordPayment, refreshPaymentStatus, sumCollected } from './ledger';
 import {
   ADMIN_ACCOUNT,
   COLLEGES,
@@ -191,61 +193,103 @@ function makeTenant(
   return tenant;
 }
 
-/** Generate the historical PAID payments (and current month when PAID). */
-function makePayments(
+/** How a seeded month was settled. */
+type MonthOutcome = 'FULL' | 'PARTIAL' | 'NONE';
+
+function pickMethod(rng: Rng): PaymentMethod {
+  return rng.weighted([
+    ['ONLINE', 55],
+    ['CASH', 35],
+    ['SPLIT', 10],
+  ] as const);
+}
+
+/**
+ * Seed a tenancy's ledger from its ledger start to today (or check-out).
+ * Most months are collected in full; a slice of tenancies carry an unpaid or
+ * part-paid earlier month (arrears), and the current month is paid, part-paid
+ * or still open — so every Collections / Reports state has real data behind it.
+ * Part payments are two receipts (cash first, the rest online later).
+ */
+function seedLedger(
   db: MockDatabase,
   rng: Rng,
   tenancy: Tenancy,
   recordedByName: string,
   now: Date,
 ): void {
-  const amount = tenancy.monthlyRent + tenancy.maintenanceCharge;
-  const checkIn = toDate(tenancy.checkInDate);
-  const end = tenancy.checkOutDate ? toDate(tenancy.checkOutDate) : now;
+  const due = monthlyDuePaise(tenancy);
+  const start = startOfMonth(
+    toDate(tenancy.checkInDate) > toDate(tenancy.createdAt) ? tenancy.checkInDate : tenancy.createdAt,
+  );
+  const end = startOfMonth(tenancy.checkOutDate ?? now);
+  const current = startOfMonth(now).getTime();
   const dueDay = tenancy.paymentDueDay ?? 5;
 
-  // Walk backwards from the month of `end`: up to 6 covered months.
-  for (let back = 0; back < 6; back++) {
-    const forMonth = startOfMonth(addMonths(startOfMonth(end), -back));
-    if (forMonth < startOfMonth(checkIn)) break;
+  // One earlier month in arrears for ~14% of active tenancies.
+  const arrearsBack = tenancy.status === 'ACTIVE' && rng.chance(0.14) ? rng.int(1, 3) : -1;
 
-    const isCurrentMonth = forMonth.getTime() === startOfMonth(now).getTime();
-    if (tenancy.status === 'ACTIVE' && isCurrentMonth && tenancy.paymentStatus !== 'PAID') {
-      continue; // unpaid current cycle — no payment row yet
+  for (let month = start; month <= end; month = addMonths(month, 1)) {
+    const back = Math.round((current - month.getTime()) / (30.44 * 24 * 60 * 60 * 1000));
+    const isCurrent = month.getTime() === current;
+
+    let outcome: MonthOutcome = 'FULL';
+    if (isCurrent && tenancy.status === 'ACTIVE') {
+      outcome = rng.weighted([
+        ['FULL', 58],
+        ['PARTIAL', 16],
+        ['NONE', 26],
+      ] as const);
+    } else if (back === arrearsBack) {
+      outcome = rng.chance(0.5) ? 'NONE' : 'PARTIAL';
+    }
+    if (outcome === 'NONE') continue;
+
+    let paidAt = addDays(month, dueDay - 1 + rng.int(-3, 4));
+    if (paidAt > now) paidAt = addDays(now, -rng.int(0, 1));
+    if (paidAt < month) paidAt = month;
+
+    if (outcome === 'FULL' && rng.chance(0.88)) {
+      const method = pickMethod(rng);
+      const cash = method === 'SPLIT' ? Math.round((due * rng.int(30, 70)) / 100 / 10000) * 10000 : 0;
+      recordPayment(db, {
+        tenancy,
+        amount: due,
+        forMonth: month,
+        method,
+        cashPaise: cash,
+        onlinePaise: due - cash,
+        at: paidAt,
+        recordedByName,
+      });
+      continue;
     }
 
-    const method: PaymentMethod = rng.weighted([
-      ['ONLINE', 55],
-      ['CASH', 35],
-      ['SPLIT', 10],
-    ] as const);
-    let cashAmount: number | null = null;
-    let onlineAmount: number | null = null;
-    if (method === 'SPLIT') {
-      cashAmount = Math.round((amount * rng.int(30, 70)) / 100 / 10000) * 10000;
-      onlineAmount = amount - cashAmount;
-    }
-
-    let paidAt = addDays(forMonth, dueDay - 1 + rng.int(-2, 4));
-    if (paidAt > now) paidAt = now;
-    if (paidAt < forMonth) paidAt = forMonth;
-
-    db.payments.push({
-      id: newId('payment'),
-      propertyId: tenancy.propertyId,
-      tenancyId: tenancy.id,
-      tenantId: tenancy.tenantId,
-      amount,
-      forMonth: forMonth.toISOString(),
-      status: 'PAID',
-      method,
-      cashAmount,
-      onlineAmount,
-      paidAt: paidAt.toISOString(),
-      notes: null,
+    // Two receipts: a cash part first, then (for FULL) the rest online.
+    const firstPart = Math.max(100_000, Math.round((due * rng.int(35, 65)) / 100 / 50_000) * 50_000);
+    const first = Math.min(firstPart, due - 50_000);
+    recordPayment(db, {
+      tenancy,
+      amount: first,
+      forMonth: month,
+      method: 'CASH',
+      at: paidAt,
+      notes: rng.chance(0.4) ? 'Part payment at the desk' : null,
       recordedByName,
-      createdAt: paidAt.toISOString(),
     });
+    if (outcome === 'FULL') {
+      let secondAt = addDays(paidAt, rng.int(3, 12));
+      if (secondAt > now) secondAt = now;
+      recordPayment(db, {
+        tenancy,
+        amount: due - first,
+        forMonth: month,
+        method: 'ONLINE',
+        at: secondAt,
+        notes: rng.chance(0.5) ? `UPI ref ${rng.int(100000, 999999)}` : null,
+        recordedByName,
+      });
+    }
   }
 }
 
@@ -272,6 +316,12 @@ export function createInvoiceRecord(
     discountPaise?: number;
     notes?: string | null;
     failed?: boolean;
+    /** The collection this invoice was issued for (auto invoice). */
+    paymentId?: string | null;
+    receivedPaise?: number | null;
+    /** Collected against the month at issue time; defaults to the ledger now. */
+    paidPaise?: number;
+    lastError?: string | null;
   },
 ): Invoice {
   const charges = {
@@ -284,6 +334,7 @@ export function createInvoiceRecord(
   const { subtotalPaise, totalPaise } = computeInvoiceTotals(charges);
   const number = nextInvoiceNumber(input.tenancy.propertyId, input.billingMonth);
   const failed = input.failed ?? false;
+  const paidPaise = input.paidPaise ?? sumCollected(db, input.tenancy.id, input.billingMonth);
 
   const invoice: Invoice = {
     id: newId('invoice'),
@@ -302,15 +353,24 @@ export function createInvoiceRecord(
     discountPaise: charges.discountPaise,
     subtotalPaise,
     totalPaise,
+    paidPaise,
+    receivedPaise: input.receivedPaise ?? null,
+    paymentId: input.paymentId ?? null,
     notes: input.notes ?? null,
     storageKey: `invoices/${input.propertySlug}/${number}.pdf`,
     status: failed ? 'FAILED' : 'SENT',
     sentAt: failed ? null : input.issueDate.toISOString(),
+    lastError: failed
+      ? input.lastError ?? 'WhatsApp delivery failed: the number is not on WhatsApp.'
+      : null,
     createdAt: input.issueDate.toISOString(),
   };
   db.invoices.push(invoice);
   return invoice;
 }
+
+/** Balance still owed on an invoice (re-exported for list rows). */
+export { invoiceBalancePaise };
 
 // ---------------------------------------------------------------------------
 // Property generation
@@ -380,8 +440,15 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
         number: `${blockName ?? ''}${floorNumber}${String(seq).padStart(2, '0')}`,
         label: null,
         sharingType,
+        // Most rooms carry a room-level rent default (web `Room.defaultRent`);
+        // a few are left per-tenant so both paths are exercised.
+        defaultRent: rng.chance(0.8) ? rentFor(def, blockName, sharingType) : null,
+        defaultMaintenance: null,
         order: seq,
       };
+      if (room.defaultRent !== null && rng.chance(0.3)) {
+        room.defaultMaintenance = def.isFlat ? 100_000 : 50_000;
+      }
       db.rooms.push(room);
 
       bedLabels(sharingType).forEach((label, bedIndex) => {
@@ -425,15 +492,16 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
     const checkInDaysAgo = rng.int(35, 600);
     const checkInISO = isoDaysAgo(checkInDaysAgo, now);
     const tenant = makeTenant(db, rng, names, property.id, checkInISO);
-    const rent = rentFor(def, blockName, room.sharingType);
-    const maintenance = rng.chance(def.isFlat ? 0.5 : 0.4) ? (def.isFlat ? 100_000 : 50_000) : 0;
-    const paymentStatus: PaymentStatus = rng.weighted([
-      ['PAID', 68],
-      ['PENDING', 22],
-      ['OVERDUE', 10],
-    ] as const);
+    const rent = room.defaultRent ?? rentFor(def, blockName, room.sharingType);
+    const maintenance =
+      room.defaultMaintenance ??
+      (rng.chance(def.isFlat ? 0.5 : 0.4) ? (def.isFlat ? 100_000 : 50_000) : 0);
 
     const noticeGiven = rng.chance(0.05) ? addDays(now, -rng.int(1, 10)) : null;
+    // Long-standing tenancies were entered into the app ("imported") within the
+    // last 8 months, so their ledger — and any arrears — starts there.
+    const importedAt = addMonths(startOfMonth(now), -rng.int(5, 8));
+    const createdAt = toDate(checkInISO) < importedAt ? importedAt.toISOString() : checkInISO;
 
     const tenancy: Tenancy = {
       id: newId('tenancy'),
@@ -447,7 +515,7 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
       // Deposits are stored net of the ₹1000 maintenance reserve deducted at move-in.
       securityDeposit: rent * 2 - MAINTENANCE_RESERVE_PAISE,
       depositStatus: 'PENDING',
-      paymentStatus,
+      paymentStatus: 'PENDING',
       paymentDueDay: rng.weighted([
         [5, 6], [1, 2], [2, 1], [3, 1], [4, 1], [6, 1], [7, 1], [10, 1],
       ] as const),
@@ -455,11 +523,13 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
       noticeGivenDate: noticeGiven ? noticeGiven.toISOString() : null,
       expectedLeavingDate: noticeGiven ? vacateByDate(noticeGiven).toISOString() : null,
       checkOutDate: null,
+      createdAt,
     };
     db.tenancies.push(tenancy);
     bed.status = 'OCCUPIED';
 
-    makePayments(db, rng, tenancy, rng.chance(0.85) ? manager.name : ADMIN_ACCOUNT.name, now);
+    seedLedger(db, rng, tenancy, rng.chance(0.85) ? manager.name : ADMIN_ACCOUNT.name, now);
+    refreshPaymentStatus(db, tenancy, now);
 
     // Past stay on the same bed for a slice of tenants (stay history demo).
     if (rng.chance(0.08)) {
@@ -487,45 +557,65 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
         noticeGivenDate: pastNotice ? pastNotice.toISOString() : null,
         expectedLeavingDate: pastNotice ? vacateByDate(pastNotice).toISOString() : null,
         checkOutDate: checkOutISO,
+        createdAt: isoDaysAgo(endedCheckInDaysAgo, now),
       };
       db.tenancies.push(ended);
+      if (endedCheckOutDaysAgo < 240) {
+        seedLedger(db, rng, ended, manager.name, now);
+      }
     }
   }
 
   // --- Invoices ------------------------------------------------------------
+  // Every collection issues an invoice automatically (web `issueInvoiceForPayment`):
+  // seed them for the last three billing months, snapshotting what had been
+  // collected so far at each receipt. A slice failed delivery and a few bills
+  // went out before any payment (manual Send Invoice).
   const activeTenancies = db.tenancies.filter(
     (t) => t.propertyId === property.id && t.status === 'ACTIVE',
   );
   const currentMonth = startOfMonth(now);
-  for (const tenancy of activeTenancies) {
-    // Previous months: invoice trail for ~45% of tenancies.
-    for (let back = 2; back >= 1; back--) {
-      const billingMonth = startOfMonth(addMonths(currentMonth, -back));
-      if (billingMonth < startOfMonth(tenancy.checkInDate)) continue;
-      if (!rng.chance(0.45)) continue;
-      createInvoiceRecord(db, {
-        tenancy,
-        propertySlug: property.slug,
-        billingMonth,
-        issueDate: addDays(billingMonth, rng.int(0, 3)),
-        failed: rng.chance(0.06),
-      });
-    }
-    // Current month: sent for PAID (60%) and for a slice of unpaid dues (35%).
-    const sendChance = tenancy.paymentStatus === 'PAID' ? 0.6 : 0.35;
-    if (rng.chance(sendChance)) {
-      createInvoiceRecord(db, {
-        tenancy,
-        propertySlug: property.slug,
-        billingMonth: currentMonth,
-        issueDate: addDays(currentMonth, rng.int(0, 2)),
-        extraChargesPaise: rng.chance(0.12) ? rng.int(2, 8) * 10_000 : 0,
-        extraChargesLabel: rng.chance(0.12) ? 'Electricity extra' : null,
-        discountPaise: rng.chance(0.08) ? rng.int(2, 5) * 10_000 : 0,
-        failed: rng.chance(0.08),
-      });
-    }
+  const invoiceFrom = addMonths(currentMonth, -2).getTime();
+  const tenancyById = new Map(db.tenancies.map((t) => [t.id, t]));
+  const receipts = db.payments
+    .filter(
+      (p) =>
+        p.propertyId === property.id && startOfMonth(p.forMonth).getTime() >= invoiceFrom,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const paidSoFar = new Map<string, number>();
+  for (const payment of receipts) {
+    const tenancy = tenancyById.get(payment.tenancyId);
+    if (!tenancy) continue;
+    const key = `${payment.tenancyId}:${payment.forMonth}`;
+    const paid = (paidSoFar.get(key) ?? 0) + payment.amount;
+    paidSoFar.set(key, paid);
+    createInvoiceRecord(db, {
+      tenancy,
+      propertySlug: property.slug,
+      billingMonth: toDate(payment.forMonth),
+      issueDate: toDate(payment.createdAt),
+      paymentId: payment.id,
+      receivedPaise: payment.amount,
+      paidPaise: paid,
+      failed: rng.chance(0.06),
+    });
   }
+  for (const tenancy of activeTenancies) {
+    if (tenancy.paymentStatus === 'PAID' || !rng.chance(0.3)) continue;
+    createInvoiceRecord(db, {
+      tenancy,
+      propertySlug: property.slug,
+      billingMonth: currentMonth,
+      issueDate: addDays(currentMonth, rng.int(0, 2)),
+      extraChargesPaise: rng.chance(0.12) ? rng.int(2, 8) * 10_000 : 0,
+      extraChargesLabel: rng.chance(0.12) ? 'Electricity extra' : null,
+      discountPaise: rng.chance(0.08) ? rng.int(2, 5) * 10_000 : 0,
+      paidPaise: 0,
+      failed: rng.chance(0.1),
+    });
+  }
+  db.invoices.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   // --- Complaints ----------------------------------------------------------
   const admin = db.users.find((u) => u.role === 'ADMIN');
@@ -678,7 +768,7 @@ function generateProperty(db: MockDatabase, def: PropertyDef, now: Date): void {
     pushNotification(
       'PAYMENT',
       'Rent overdue',
-      `${tenant.fullName} (${property.isFlat ? 'Flat' : 'Room'} ${room.number}) has an overdue balance of ${formatINR(tenancy.monthlyRent + tenancy.maintenanceCharge)}.`,
+      `${tenant.fullName} (${property.isFlat ? 'Flat' : 'Room'} ${room.number}) has an overdue balance of ${formatINR(monthlyDuePaise(tenancy) - sumCollected(db, tenancy.id, currentMonth))}.`,
       isoDaysAgo(rng.int(1, 3), now),
     );
   }

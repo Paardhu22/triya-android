@@ -103,6 +103,13 @@ export interface Room {
   label: string | null;
   /** Configured number of beds in the room. */
   sharingType: number;
+  /**
+   * Per-room rent defaults (paise). Every bed in the room inherits them: they
+   * pre-fill a new move-in and can be pushed onto the room's active tenancies.
+   * Null means "no room-level default" — rent is then purely per tenant.
+   */
+  defaultRent: number | null;
+  defaultMaintenance: number | null;
   order: number;
 }
 
@@ -158,7 +165,10 @@ export interface Tenancy {
   /** Paise. Net of the ₹1000 maintenance reserve deducted at move-in. */
   securityDeposit: number | null;
   depositStatus: DepositStatus;
-  /** Current-cycle snapshot shown on the bed. */
+  /**
+   * Current-cycle snapshot shown on the bed. Never set by hand — re-derived
+   * from the payments ledger (web `refreshPaymentStatus`).
+   */
   paymentStatus: PaymentStatus;
   /** Day of month rent is due (1-31). */
   paymentDueDay: number | null;
@@ -167,8 +177,14 @@ export interface Tenancy {
   noticeGivenDate: string | null;
   expectedLeavingDate: string | null;
   checkOutDate: string | null;
+  /** When the tenancy was entered into the app (ledger start, see rent.ts). */
+  createdAt: string;
 }
 
+/**
+ * One collection event (a receipt). A billing month (`forMonth`) can hold
+ * several — part payments, cash and/or online.
+ */
 export interface Payment {
   id: string;
   propertyId: string;
@@ -180,9 +196,9 @@ export interface Payment {
   forMonth: string;
   status: PaymentStatus;
   method: PaymentMethod;
-  /** Paise. Only for SPLIT payments. */
+  /** Paise. Always written on new rows; `cashAmount + onlineAmount === amount`. */
   cashAmount: number | null;
-  /** Paise. Only for SPLIT payments. */
+  /** Paise. */
   onlineAmount: number | null;
   paidAt: string | null;
   notes: string | null;
@@ -225,11 +241,19 @@ export interface Invoice {
   discountPaise: number;
   subtotalPaise: number;
   totalPaise: number;
+  /** Collected against the billing month when issued (all part payments so far). */
+  paidPaise: number;
+  /** Set when issued automatically for a collection: that collection's amount. */
+  receivedPaise: number | null;
+  /** The collection this invoice was issued for; null for a bill sent before payment. */
+  paymentId: string | null;
   notes: string | null;
   /** PDF path within the backend storage driver. */
   storageKey: string;
   status: InvoiceStatus;
   sentAt: string | null;
+  /** Why the last delivery attempt failed, shown in history. */
+  lastError: string | null;
   createdAt: string;
 }
 

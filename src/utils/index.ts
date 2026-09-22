@@ -11,6 +11,8 @@ export {
   differenceInCalendarDays,
   isSameMonth,
   formatFullDate,
+  formatLongDate,
+  formatDateTime,
   formatDayMonth,
   formatShortMonthYear,
   formatMonthYear,
@@ -26,11 +28,37 @@ export {
   vacateByDate,
   resolveDepositStatusOnVacate,
   rentDueText,
-  currentCycleDuePaise,
 } from './tenancy';
 
 export {
+  PAYMENT_METHOD_META,
+  DEFAULT_DUE_DAY,
+  PAYMENT_FILTER_OPTIONS,
+  monthlyDuePaise,
+  paymentSplit,
+  resolveSplitPaise,
+  rentDueDate,
+  resolvePaymentStatus,
+  resolveCollectionState,
+  matchesPaymentFilter,
+  monthKey,
+  monthFromKey,
+  ledgerStartMonth,
+  earlierDues,
+  balancePaise,
+  advancePaise,
+} from './rent';
+export type {
+  CollectionState,
+  PaymentFilter,
+  RentCollectionEntry,
+  RentCollectionView,
+} from './rent';
+
+export {
   computeInvoiceTotals,
+  invoiceBalancePaise,
+  invoiceStatusLabel,
   defaultBillingMonth,
   defaultDueDate,
 } from './invoice';

@@ -15,8 +15,14 @@ import { simulateLatency, subscribeToDb } from '@/mocks';
 
 export interface AsyncData<T> {
   data: T | null;
-  /** True during the first load only. */
+  /** True during the first load only (no data to show yet). */
   isLoading: boolean;
+  /**
+   * True while a dependency change (e.g. a new billing month) reloads. The
+   * previous data stays on screen meanwhile — stale-while-revalidate, so
+   * switching a filter never flashes a skeleton.
+   */
+  isFetching: boolean;
   error: string | null;
   /** Pull-to-refresh state (spinner in RefreshControl). */
   isRefreshing: boolean;
@@ -30,7 +36,9 @@ export function useAsyncData<T>(
 ): AsyncData<T> {
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasData = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetcherRef = useRef(fetcher);
@@ -39,6 +47,7 @@ export function useAsyncData<T>(
   const runSync = useCallback(() => {
     try {
       setData(fetcherRef.current());
+      hasData.current = true;
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load data');
@@ -49,11 +58,13 @@ export function useAsyncData<T>(
   // and skeleton states behave as they will against the network.
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    simulateLatency(350).then(() => {
+    if (hasData.current) setIsFetching(true);
+    else setIsLoading(true);
+    simulateLatency(hasData.current ? 220 : 350).then(() => {
       if (cancelled) return;
       runSync();
       setIsLoading(false);
+      setIsFetching(false);
     });
     return () => {
       cancelled = true;
@@ -75,5 +86,5 @@ export function useAsyncData<T>(
     setIsRefreshing(false);
   }, [runSync]);
 
-  return { data, isLoading, error, isRefreshing, refresh, refetch: runSync };
+  return { data, isLoading, isFetching, error, isRefreshing, refresh, refetch: runSync };
 }

@@ -12,16 +12,41 @@ import type {
   BedStatus,
   Complaint,
   Expense,
+  Floor,
   Invoice,
   Payment,
   PaymentStatus,
   Property,
+  Room,
   Tenancy,
   Tenant,
   User,
 } from '@/types';
-import { isSameMonth, startOfMonth, toDate } from '@/utils';
+import {
+  addMonths,
+  advancePaise,
+  balancePaise,
+  bedLocationLabel,
+  earlierDues,
+  endOfMonth,
+  formatMonthYear,
+  formatShortMonthYear,
+  isSameMonth,
+  ledgerStartMonth,
+  monthFromKey,
+  monthKey,
+  monthlyDuePaise,
+  paymentSplit,
+  rentDueDate,
+  resolveCollectionState,
+  resolvePaymentStatus,
+  startOfMonth,
+  toDate,
+  type CollectionState,
+  type RentCollectionView,
+} from '@/utils';
 import { getDb } from './db';
+import { loadCollectedByMonth, sumCollected } from './ledger';
 
 // ---------------------------------------------------------------------------
 // Auth & properties
@@ -82,13 +107,110 @@ export function getPropertyStats(propertyId: string): PropertyStats {
 }
 
 // ---------------------------------------------------------------------------
+// Shared lookups
+// ---------------------------------------------------------------------------
+
+type Db = ReturnType<typeof getDb>;
+
+function lookups(db: Db) {
+  return {
+    tenantById: new Map(db.tenants.map((t) => [t.id, t])),
+    roomById: new Map(db.rooms.map((r) => [r.id, r])),
+    bedById: new Map(db.beds.map((b) => [b.id, b])),
+    floorById: new Map(db.floors.map((f) => [f.id, f])),
+    blockById: new Map(db.blocks.map((b) => [b.id, b])),
+  };
+}
+
+/** Current-month position for an active tenancy, derived from the ledger. */
+function currentMonthPosition(db: Db, t: Tenancy, month: Date = startOfMonth(new Date())) {
+  const duePaise = monthlyDuePaise(t);
+  const collectedPaise = sumCollected(db, t.id, month);
+  return {
+    duePaise,
+    collectedPaise,
+    state: resolveCollectionState(duePaise, collectedPaise),
+    // Derived rather than the stored snapshot, which only refreshes on writes.
+    paymentStatus: resolvePaymentStatus({
+      duePaise,
+      collectedPaise,
+      paymentDueDay: t.paymentDueDay,
+      month,
+    }),
+  };
+}
+
+/** "Floor 2" / "Block A · Floor 2" — the web's report/dashboard floor label. */
+function floorLabel(db: Db, floor: Floor | undefined): string {
+  if (!floor) return 'Floor';
+  const base = floor.name ?? `Floor ${floor.number}`;
+  const block = floor.blockId ? db.blocks.find((b) => b.id === floor.blockId) : null;
+  return block ? `Block ${block.name} · ${base}` : base;
+}
+
+function floorSortKey(db: Db, floor: Floor | undefined): string {
+  if (!floor) return '9999';
+  const block = floor.blockId ? db.blocks.find((b) => b.id === floor.blockId) : null;
+  return [block?.order ?? 0, floor.order, floor.number]
+    .map((n) => String(n + 1000).padStart(5, '0'))
+    .join('-');
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard (mirrors lib/queries/dashboard.ts)
 // ---------------------------------------------------------------------------
+
+/** Months of history in the dashboard trend chart, including the current one. */
+const TREND_MONTHS = 6;
+
+interface Fill {
+  rooms: number;
+  beds: number;
+  occupied: number;
+  available: number;
+}
+
+const emptyFill = (): Fill => ({ rooms: 0, beds: 0, occupied: 0, available: 0 });
+
+export interface SharingBreakdownRow extends Fill {
+  sharingType: number;
+  /** Expected monthly rent (rent + maintenance) of the active tenancies. */
+  expectedPaise: number;
+}
+
+export interface BlockBreakdownRow extends Fill {
+  id: string;
+  name: string;
+  floors: number;
+}
+
+export interface FloorBreakdownRow extends Fill {
+  id: string;
+  number: number;
+  name: string | null;
+  blockName: string | null;
+}
+
+export interface TrendPoint {
+  label: string;
+  collectedPaise: number;
+  expensesPaise: number;
+}
+
+export interface NoticeTenancy {
+  id: string;
+  tenantId: string;
+  name: string;
+  roomNumber: string;
+  bedLabel: string;
+  noticeGivenDate: string;
+}
 
 export interface RecentPayment {
   id: string;
   amount: number;
   status: PaymentStatus;
+  method: Payment['method'];
   createdAt: string;
   tenantName: string;
 }
@@ -102,69 +224,175 @@ export interface RecentComplaint {
   tenantName: string | null;
 }
 
-export interface SharingBreakdownRow {
-  sharingType: number;
-  rooms: number;
-  beds: number;
-  occupied: number;
-  available: number;
-}
-
-export interface BlockBreakdownRow {
-  name: string;
-  rooms: number;
-  beds: number;
-  occupied: number;
-  available: number;
-}
-
 export interface DashboardData {
+  monthStart: string;
+  // Capacity
   totalRooms: number;
   totalBeds: number;
   occupiedBeds: number;
   availableBeds: number;
-  paidCount: number;
-  pendingCount: number;
-  /** Paise. Sum of PAID payments recorded this month. */
-  monthlyCollections: number;
-  /** Paise. Sum of expenses dated this month. */
-  monthlyExpenses: number;
-  recentPayments: RecentPayment[];
-  recentComplaints: RecentComplaint[];
+  fullRooms: number;
+  partialRooms: number;
+  emptyRooms: number;
+  // Breakdowns
   sharingBreakdown: SharingBreakdownRow[];
   blockBreakdown: BlockBreakdownRow[];
+  floorBreakdown: FloorBreakdownRow[];
+  // Rent
+  activeTenancies: number;
+  paidCount: number;
+  partialCount: number;
+  unpaidCount: number;
+  overdueCount: number;
+  expectedPaise: number;
+  collectedPaise: number;
+  outstandingPaise: number;
+  expensesPaise: number;
+  netPaise: number;
+  // Movement
+  moveInsThisMonth: number;
+  moveOutsThisMonth: number;
+  noticeTenancies: NoticeTenancy[];
+  // Activity
+  trend: TrendPoint[];
+  recentPayments: RecentPayment[];
+  recentComplaints: RecentComplaint[];
+  openComplaints: number;
 }
 
+/**
+ * Occupancy, rent, expense and activity figures for the dashboard. Occupancy
+ * is rolled up from one room/bed pass so every breakdown reconciles with the
+ * totals; collections are grouped by the month they BILL (forMonth).
+ */
 export function getDashboardData(propertyId: string): DashboardData {
   const db = getDb();
   const now = new Date();
+  const monthStart = startOfMonth(now);
+  const monthKeyNow = monthKey(monthStart);
+  const trendFrom = addMonths(monthStart, -(TREND_MONTHS - 1));
+  const { tenantById, roomById, bedById, floorById, blockById } = lookups(db);
 
   const rooms = db.rooms.filter((r) => r.propertyId === propertyId);
-  const beds = db.beds.filter((b) => b.propertyId === propertyId);
-  const occupiedBeds = beds.filter((b) => b.status === 'OCCUPIED').length;
+  const bedsByRoom = new Map<string, Bed[]>();
+  for (const bed of db.beds) {
+    if (bed.propertyId !== propertyId) continue;
+    const list = bedsByRoom.get(bed.roomId) ?? [];
+    list.push(bed);
+    bedsByRoom.set(bed.roomId, list);
+  }
 
-  const activeTenancies = db.tenancies.filter(
-    (t) => t.propertyId === propertyId && t.status === 'ACTIVE',
-  );
-  const paidCount = activeTenancies.filter((t) => t.paymentStatus === 'PAID').length;
-  const pendingCount = activeTenancies.filter(
-    (t) => t.paymentStatus === 'PENDING' || t.paymentStatus === 'OVERDUE',
-  ).length;
+  // --- Occupancy roll-up ---------------------------------------------------
+  const sharingMap = new Map<number, Fill>();
+  const blockMap = new Map<string, Fill & { name: string; order: number; floors: Set<string> }>();
+  const floorMap = new Map<string, Fill & { floor: Floor }>();
+  let totalBeds = 0;
+  let occupiedBeds = 0;
+  let fullRooms = 0;
+  let partialRooms = 0;
+  let emptyRooms = 0;
 
-  const monthlyCollections = db.payments
-    .filter(
-      (p) =>
-        p.propertyId === propertyId &&
-        p.status === 'PAID' &&
-        isSameMonth(p.createdAt, now),
-    )
+  const add = (target: Fill, beds: number, occupied: number) => {
+    target.rooms += 1;
+    target.beds += beds;
+    target.occupied += occupied;
+    target.available += beds - occupied;
+  };
+
+  for (const room of rooms) {
+    const roomBeds = bedsByRoom.get(room.id) ?? [];
+    const beds = roomBeds.length;
+    const occupied = roomBeds.filter((b) => b.status === 'OCCUPIED').length;
+    totalBeds += beds;
+    occupiedBeds += occupied;
+    if (beds > 0 && occupied === beds) fullRooms += 1;
+    else if (occupied > 0) partialRooms += 1;
+    else emptyRooms += 1;
+
+    const sharing = sharingMap.get(room.sharingType) ?? emptyFill();
+    add(sharing, beds, occupied);
+    sharingMap.set(room.sharingType, sharing);
+
+    const floor = floorById.get(room.floorId);
+    if (!floor) continue;
+    const block = floor.blockId ? blockById.get(floor.blockId) : null;
+    if (block) {
+      const entry =
+        blockMap.get(block.id) ??
+        { ...emptyFill(), name: block.name, order: block.order, floors: new Set<string>() };
+      add(entry, beds, occupied);
+      entry.floors.add(floor.id);
+      blockMap.set(block.id, entry);
+    }
+    const floorEntry = floorMap.get(floor.id) ?? { ...emptyFill(), floor };
+    add(floorEntry, beds, occupied);
+    floorMap.set(floor.id, floorEntry);
+  }
+
+  // --- Rent roll-up ----------------------------------------------------------
+  const active = db.tenancies.filter((t) => t.propertyId === propertyId && t.status === 'ACTIVE');
+  let expectedPaise = 0;
+  let paidCount = 0;
+  let partialCount = 0;
+  let unpaidCount = 0;
+  let overdueCount = 0;
+  const revenueBySharing = new Map<number, number>();
+
+  for (const t of active) {
+    const pos = currentMonthPosition(db, t, monthStart);
+    expectedPaise += pos.duePaise;
+    if (pos.state === 'PAID') paidCount += 1;
+    else if (pos.state === 'PARTIAL') partialCount += 1;
+    else unpaidCount += 1;
+    if (pos.paymentStatus === 'OVERDUE') overdueCount += 1;
+    const sharing = roomById.get(t.roomId)?.sharingType ?? 0;
+    revenueBySharing.set(sharing, (revenueBySharing.get(sharing) ?? 0) + pos.duePaise);
+  }
+
+  const payments = db.payments.filter((p) => p.propertyId === propertyId && p.status === 'PAID');
+  const collectedPaise = payments
+    .filter((p) => monthKey(p.forMonth) === monthKeyNow)
     .reduce((sum, p) => sum + p.amount, 0);
 
-  const monthlyExpenses = db.expenses
-    .filter((e) => e.propertyId === propertyId && isSameMonth(e.date, now))
-    .reduce((sum, e) => sum + e.amount, 0);
+  // --- Trend -------------------------------------------------------------------
+  const collectedByMonth = new Map<string, number>();
+  for (const p of payments) {
+    if (toDate(p.forMonth) < trendFrom) continue;
+    const key = monthKey(p.forMonth);
+    collectedByMonth.set(key, (collectedByMonth.get(key) ?? 0) + p.amount);
+  }
+  const expensesByMonth = new Map<string, number>();
+  for (const e of db.expenses) {
+    if (e.propertyId !== propertyId || toDate(e.date) < trendFrom) continue;
+    const key = monthKey(e.date);
+    expensesByMonth.set(key, (expensesByMonth.get(key) ?? 0) + e.amount);
+  }
+  const trend: TrendPoint[] = Array.from({ length: TREND_MONTHS }, (_, i) => {
+    const month = addMonths(monthStart, -(TREND_MONTHS - 1 - i));
+    const key = monthKey(month);
+    return {
+      label: formatShortMonth(month),
+      collectedPaise: collectedByMonth.get(key) ?? 0,
+      expensesPaise: expensesByMonth.get(key) ?? 0,
+    };
+  });
+  const expensesPaise = expensesByMonth.get(monthKeyNow) ?? 0;
 
-  const tenantById = new Map(db.tenants.map((t) => [t.id, t]));
+  // --- Movement & activity ----------------------------------------------------
+  const inMonth = (iso: string | null) => Boolean(iso) && isSameMonth(iso as string, now);
+  const propertyTenancies = db.tenancies.filter((t) => t.propertyId === propertyId);
+
+  const noticeTenancies: NoticeTenancy[] = active
+    .filter((t) => t.noticeGivenDate !== null)
+    .map((t) => ({
+      id: t.id,
+      tenantId: t.tenantId,
+      name: tenantById.get(t.tenantId)?.fullName ?? 'Unknown',
+      roomNumber: roomById.get(t.roomId)?.number ?? '?',
+      bedLabel: bedById.get(t.bedId)?.label ?? '?',
+      noticeGivenDate: t.noticeGivenDate as string,
+    }))
+    .sort((a, b) => a.noticeGivenDate.localeCompare(b.noticeGivenDate));
 
   const recentPayments: RecentPayment[] = db.payments
     .filter((p) => p.propertyId === propertyId)
@@ -174,12 +402,13 @@ export function getDashboardData(propertyId: string): DashboardData {
       id: p.id,
       amount: p.amount,
       status: p.status,
+      method: p.method,
       createdAt: p.createdAt,
       tenantName: tenantById.get(p.tenantId)?.fullName ?? 'Unknown',
     }));
 
-  const recentComplaints: RecentComplaint[] = db.complaints
-    .filter((c) => c.propertyId === propertyId)
+  const propertyComplaints = db.complaints.filter((c) => c.propertyId === propertyId);
+  const recentComplaints: RecentComplaint[] = [...propertyComplaints]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 5)
     .map((c) => ({
@@ -191,61 +420,58 @@ export function getDashboardData(propertyId: string): DashboardData {
       tenantName: c.tenantId ? tenantById.get(c.tenantId)?.fullName ?? null : null,
     }));
 
-  // Sharing + block breakdowns (grouped in memory, as on the web).
-  const floorById = new Map(db.floors.map((f) => [f.id, f]));
-  const blockById = new Map(db.blocks.map((b) => [b.id, b]));
-  const bedsByRoom = new Map<string, Bed[]>();
-  for (const bed of beds) {
-    const list = bedsByRoom.get(bed.roomId) ?? [];
-    list.push(bed);
-    bedsByRoom.set(bed.roomId, list);
-  }
-
-  const sharingMap = new Map<number, SharingBreakdownRow>();
-  const blockMap = new Map<string, BlockBreakdownRow>();
-
-  for (const room of rooms) {
-    const roomBeds = bedsByRoom.get(room.id) ?? [];
-    const occupied = roomBeds.filter((b) => b.status === 'OCCUPIED').length;
-    const available = roomBeds.length - occupied;
-
-    const sharing =
-      sharingMap.get(room.sharingType) ??
-      { sharingType: room.sharingType, rooms: 0, beds: 0, occupied: 0, available: 0 };
-    sharing.rooms += 1;
-    sharing.beds += roomBeds.length;
-    sharing.occupied += occupied;
-    sharing.available += available;
-    sharingMap.set(room.sharingType, sharing);
-
-    const floor = floorById.get(room.floorId);
-    const block = floor?.blockId ? blockById.get(floor.blockId) : null;
-    if (block) {
-      const row =
-        blockMap.get(block.id) ??
-        { name: block.name, rooms: 0, beds: 0, occupied: 0, available: 0 };
-      row.rooms += 1;
-      row.beds += roomBeds.length;
-      row.occupied += occupied;
-      row.available += available;
-      blockMap.set(block.id, row);
-    }
-  }
-
   return {
+    monthStart: monthStart.toISOString(),
     totalRooms: rooms.length,
-    totalBeds: beds.length,
+    totalBeds,
     occupiedBeds,
-    availableBeds: beds.length - occupiedBeds,
+    availableBeds: totalBeds - occupiedBeds,
+    fullRooms,
+    partialRooms,
+    emptyRooms,
+    sharingBreakdown: [...sharingMap.entries()]
+      .map(([sharingType, fill]) => ({
+        sharingType,
+        ...fill,
+        expectedPaise: revenueBySharing.get(sharingType) ?? 0,
+      }))
+      .sort((a, b) => a.sharingType - b.sharingType),
+    blockBreakdown: [...blockMap.entries()]
+      .map(([id, { floors, order, ...fill }]) => ({ id, floors: floors.size, order, ...fill }))
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+      .map(({ order: _order, ...row }) => row),
+    floorBreakdown: [...floorMap.entries()]
+      .sort(([, a], [, b]) => floorSortKey(db, a.floor).localeCompare(floorSortKey(db, b.floor)))
+      .map(([id, { floor, ...fill }]) => ({
+        id,
+        number: floor.number,
+        name: floor.name,
+        blockName: floor.blockId ? blockById.get(floor.blockId)?.name ?? null : null,
+        ...fill,
+      })),
+    activeTenancies: active.length,
     paidCount,
-    pendingCount,
-    monthlyCollections,
-    monthlyExpenses,
+    partialCount,
+    unpaidCount,
+    overdueCount,
+    expectedPaise,
+    collectedPaise,
+    outstandingPaise: Math.max(0, expectedPaise - collectedPaise),
+    expensesPaise,
+    netPaise: collectedPaise - expensesPaise,
+    moveInsThisMonth: propertyTenancies.filter((t) => inMonth(t.checkInDate)).length,
+    moveOutsThisMonth: propertyTenancies.filter((t) => inMonth(t.checkOutDate)).length,
+    noticeTenancies,
+    trend,
     recentPayments,
     recentComplaints,
-    sharingBreakdown: [...sharingMap.values()].sort((a, b) => a.sharingType - b.sharingType),
-    blockBreakdown: [...blockMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    openComplaints: propertyComplaints.filter((c) => c.status !== 'RESOLVED').length,
   };
+}
+
+/** "Jan" — trend-axis label. */
+function formatShortMonth(d: Date): string {
+  return formatShortMonthYear(d).split(' ')[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +532,9 @@ export interface FloorBed {
     | {
         id: string;
         paymentStatus: PaymentStatus;
+        state: CollectionState;
+        duePaise: number;
+        collectedPaise: number;
         monthlyRent: number;
         maintenanceCharge: number;
         securityDeposit: number | null;
@@ -323,10 +552,13 @@ export interface FloorRoom {
   number: string;
   label: string | null;
   sharingType: number;
+  /** Room-level rent defaults (paise) — pre-fill a new move-in. */
+  defaultRent: number | null;
+  defaultMaintenance: number | null;
   beds: FloorBed[];
 }
 
-function toFloorBed(db: ReturnType<typeof getDb>, bed: Bed): FloorBed {
+function toFloorBed(db: Db, bed: Bed): FloorBed {
   const tenancy = db.tenancies.find((t) => t.bedId === bed.id && t.status === 'ACTIVE');
   const tenant = tenancy ? db.tenants.find((t) => t.id === tenancy.tenantId) : null;
   return {
@@ -337,7 +569,7 @@ function toFloorBed(db: ReturnType<typeof getDb>, bed: Bed): FloorBed {
       tenancy && tenant
         ? {
             id: tenancy.id,
-            paymentStatus: tenancy.paymentStatus,
+            ...currentMonthPosition(db, tenancy),
             monthlyRent: tenancy.monthlyRent,
             maintenanceCharge: tenancy.maintenanceCharge,
             securityDeposit: tenancy.securityDeposit,
@@ -357,22 +589,28 @@ function toFloorBed(db: ReturnType<typeof getDb>, bed: Bed): FloorBed {
   };
 }
 
+function toFloorRoom(db: Db, room: Room): FloorRoom {
+  return {
+    id: room.id,
+    number: room.number,
+    label: room.label,
+    sharingType: room.sharingType,
+    defaultRent: room.defaultRent,
+    defaultMaintenance: room.defaultMaintenance,
+    beds: db.beds
+      .filter((b) => b.roomId === room.id)
+      .sort((a, b) => a.order - b.order)
+      .map((bed) => toFloorBed(db, bed)),
+  };
+}
+
 /** Full room/bed layout for a floor, including the active tenant on each bed. */
 export function getFloorLayout(floorId: string): FloorRoom[] {
   const db = getDb();
   return db.rooms
     .filter((r) => r.floorId === floorId)
     .sort((a, b) => a.order - b.order)
-    .map((room) => ({
-      id: room.id,
-      number: room.number,
-      label: room.label,
-      sharingType: room.sharingType,
-      beds: db.beds
-        .filter((b) => b.roomId === room.id)
-        .sort((a, b) => a.order - b.order)
-        .map((bed) => toFloorBed(db, bed)),
-    }));
+    .map((room) => toFloorRoom(db, room));
 }
 
 export interface RoomDetail extends FloorRoom {
@@ -389,18 +627,24 @@ export function getRoomDetail(roomId: string): RoomDetail | null {
   const floor = db.floors.find((f) => f.id === room.floorId);
   const block = floor?.blockId ? db.blocks.find((b) => b.id === floor.blockId) : null;
   return {
-    id: room.id,
-    number: room.number,
-    label: room.label,
-    sharingType: room.sharingType,
+    ...toFloorRoom(db, room),
     floorNumber: floor?.number ?? 0,
     floorName: floor?.name ?? null,
     blockName: block?.name ?? null,
     propertyId: room.propertyId,
-    beds: db.beds
-      .filter((b) => b.roomId === room.id)
-      .sort((a, b) => a.order - b.order)
-      .map((bed) => toFloorBed(db, bed)),
+  };
+}
+
+/** Room rent defaults, for pre-filling a new move-in on a bed. */
+export function getBedRoomDefaults(
+  bedId: string,
+): { defaultRent: number | null; defaultMaintenance: number | null } {
+  const db = getDb();
+  const bed = db.beds.find((b) => b.id === bedId);
+  const room = bed ? db.rooms.find((r) => r.id === bed.roomId) : null;
+  return {
+    defaultRent: room?.defaultRent ?? null,
+    defaultMaintenance: room?.defaultMaintenance ?? null,
   };
 }
 
@@ -420,14 +664,16 @@ export interface TenantListItem {
     roomNumber: string;
     bedLabel: string;
     monthlyRent: number;
+    duePaise: number;
+    collectedPaise: number;
+    state: CollectionState;
     paymentStatus: PaymentStatus;
   } | null;
 }
 
 export function getTenantList(propertyId: string): TenantListItem[] {
   const db = getDb();
-  const roomById = new Map(db.rooms.map((r) => [r.id, r]));
-  const bedById = new Map(db.beds.map((b) => [b.id, b]));
+  const { roomById, bedById } = lookups(db);
 
   return db.tenants
     .filter((t) => t.propertyId === propertyId)
@@ -450,7 +696,7 @@ export function getTenantList(propertyId: string): TenantListItem[] {
                 roomNumber: room.number,
                 bedLabel: bed.label,
                 monthlyRent: active.monthlyRent,
-                paymentStatus: active.paymentStatus,
+                ...currentMonthPosition(db, active),
               }
             : null,
       };
@@ -467,12 +713,16 @@ export interface TenantStay {
   maintenanceCharge: number;
   securityDeposit: number | null;
   depositStatus: Tenancy['depositStatus'];
-  paymentStatus: PaymentStatus;
   paymentDueDay: number | null;
   checkInDate: string;
   checkOutDate: string | null;
   noticeGivenDate: string | null;
   expectedLeavingDate: string | null;
+  /** This month's position (meaningful for the ACTIVE stay). */
+  duePaise: number;
+  collectedPaise: number;
+  state: CollectionState;
+  paymentStatus: PaymentStatus;
 }
 
 export interface TenantProfile {
@@ -487,9 +737,7 @@ export function getTenantProfile(tenantId: string): TenantProfile | null {
   const db = getDb();
   const tenant = db.tenants.find((t) => t.id === tenantId);
   if (!tenant) return null;
-
-  const roomById = new Map(db.rooms.map((r) => [r.id, r]));
-  const bedById = new Map(db.beds.map((b) => [b.id, b]));
+  const { roomById, bedById } = lookups(db);
 
   const stays: TenantStay[] = db.tenancies
     .filter((t) => t.tenantId === tenantId)
@@ -503,17 +751,22 @@ export function getTenantProfile(tenantId: string): TenantProfile | null {
       maintenanceCharge: t.maintenanceCharge,
       securityDeposit: t.securityDeposit,
       depositStatus: t.depositStatus,
-      paymentStatus: t.paymentStatus,
       paymentDueDay: t.paymentDueDay,
       checkInDate: t.checkInDate,
       checkOutDate: t.checkOutDate,
       noticeGivenDate: t.noticeGivenDate,
       expectedLeavingDate: t.expectedLeavingDate,
+      ...currentMonthPosition(db, t),
     }));
 
+  // Newest billing month first, then newest receipt within it (web order).
   const payments = db.payments
     .filter((p) => p.tenantId === tenantId)
-    .sort((a, b) => b.forMonth.localeCompare(a.forMonth))
+    .sort(
+      (a, b) =>
+        b.forMonth.localeCompare(a.forMonth) || (b.paidAt ?? '').localeCompare(a.paidAt ?? ''),
+    )
+    .slice(0, 24)
     .map((p) => ({ ...p }));
 
   return {
@@ -533,49 +786,89 @@ export interface CollectionRow {
   id: string;
   monthlyRent: number;
   maintenanceCharge: number;
-  paymentStatus: PaymentStatus;
+  paymentDueDay: number | null;
   securityDeposit: number | null;
   depositStatus: Tenancy['depositStatus'];
   noticeGivenDate: string | null;
-  paymentDueDay: number | null;
+  checkInDate: string;
   tenant: { id: string; fullName: string; phone: string; email: string | null };
   roomNumber: string;
   bedLabel: string;
   floorNumber: number;
   blockName: string | null;
-  /** When the most recent invoice for this tenancy was created (null = never). */
-  lastInvoiceAt: string | null;
+  /** Billing month as YYYY-MM. */
+  month: string;
+  status: PaymentStatus;
+  state: CollectionState;
+  dueDate: string;
+  duePaise: number;
+  collectedPaise: number;
+  balancePaise: number;
+  earlierDuePaise: number;
+  earlierDueMonths: string[];
+  /** Everything owed up to and including this month. */
+  outstandingPaise: number;
+  cashPaise: number;
+  onlinePaise: number;
+  lastCollectedAt: string | null;
+  collectionCount: number;
 }
 
-export function getCollections(propertyId: string): CollectionRow[] {
+/**
+ * Every ACTIVE tenancy with what is needed to chase rent for one billing
+ * month (the current one by default). A tenancy is only listed for months it
+ * can owe — from its ledger start month on.
+ */
+export function getCollectionsData(propertyId: string, month?: string): CollectionRow[] {
   const db = getDb();
-  const tenantById = new Map(db.tenants.map((t) => [t.id, t]));
-  const roomById = new Map(db.rooms.map((r) => [r.id, r]));
-  const bedById = new Map(db.beds.map((b) => [b.id, b]));
-  const floorById = new Map(db.floors.map((f) => [f.id, f]));
-  const blockById = new Map(db.blocks.map((b) => [b.id, b]));
+  const monthStart = month ? monthFromKey(month) : startOfMonth(new Date());
+  const key = monthKey(monthStart);
+  const { tenantById, roomById, bedById, floorById, blockById } = lookups(db);
 
-  return db.tenancies
-    .filter((t) => t.propertyId === propertyId && t.status === 'ACTIVE')
-    .map((tenancy) => {
-      const tenant = tenantById.get(tenancy.tenantId);
-      const room = roomById.get(tenancy.roomId);
-      const bed = bedById.get(tenancy.bedId);
+  const billable = db.tenancies.filter(
+    (t) =>
+      t.propertyId === propertyId &&
+      t.status === 'ACTIVE' &&
+      ledgerStartMonth(t).getTime() <= monthStart.getTime(),
+  );
+  const earliest = billable.reduce<Date | null>((min, t) => {
+    const start = ledgerStartMonth(t);
+    return !min || start < min ? start : min;
+  }, null);
+  const history = earliest
+    ? loadCollectedByMonth(db, billable.map((t) => t.id), earliest, addMonths(monthStart, -1))
+    : new Map<string, Map<string, number>>();
+
+  return billable
+    .map((t) => {
+      const tenant = tenantById.get(t.tenantId);
+      const room = roomById.get(t.roomId);
+      const bed = bedById.get(t.bedId);
       const floor = room ? floorById.get(room.floorId) : null;
       const block = floor?.blockId ? blockById.get(floor.blockId) : null;
-      const lastInvoice = db.invoices
-        .filter((i) => i.tenancyId === tenancy.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      const payments = db.payments
+        .filter((p) => p.tenancyId === t.id && p.status === 'PAID' && monthKey(p.forMonth) === key)
+        .sort((a, b) => (b.paidAt ?? '').localeCompare(a.paidAt ?? ''));
+
+      const collected = payments.reduce((sum, p) => sum + p.amount, 0);
+      const due = monthlyDuePaise(t);
+      const balance = balancePaise(due, collected);
+      const earlier = earlierDues({
+        duePaise: due,
+        startMonth: ledgerStartMonth(t),
+        beforeMonth: monthStart,
+        collectedByMonth: history.get(t.id) ?? new Map(),
+      });
 
       return {
-        id: tenancy.id,
-        monthlyRent: tenancy.monthlyRent,
-        maintenanceCharge: tenancy.maintenanceCharge,
-        paymentStatus: tenancy.paymentStatus,
-        securityDeposit: tenancy.securityDeposit,
-        depositStatus: tenancy.depositStatus,
-        noticeGivenDate: tenancy.noticeGivenDate,
-        paymentDueDay: tenancy.paymentDueDay,
+        id: t.id,
+        monthlyRent: t.monthlyRent,
+        maintenanceCharge: t.maintenanceCharge,
+        paymentDueDay: t.paymentDueDay,
+        securityDeposit: t.securityDeposit,
+        depositStatus: t.depositStatus,
+        noticeGivenDate: t.noticeGivenDate,
+        checkInDate: t.checkInDate,
         tenant: {
           id: tenant?.id ?? '',
           fullName: tenant?.fullName ?? 'Unknown',
@@ -586,10 +879,113 @@ export function getCollections(propertyId: string): CollectionRow[] {
         bedLabel: bed?.label ?? '?',
         floorNumber: floor?.number ?? 0,
         blockName: block?.name ?? null,
-        lastInvoiceAt: lastInvoice?.createdAt ?? null,
+        month: key,
+        status: resolvePaymentStatus({
+          duePaise: due,
+          collectedPaise: collected,
+          paymentDueDay: t.paymentDueDay,
+          month: monthStart,
+        }),
+        state: resolveCollectionState(due, collected),
+        dueDate: rentDueDate(t.paymentDueDay, monthStart).toISOString(),
+        duePaise: due,
+        collectedPaise: collected,
+        balancePaise: balance,
+        earlierDuePaise: earlier.paise,
+        earlierDueMonths: earlier.months,
+        outstandingPaise: balance + earlier.paise,
+        cashPaise: payments.reduce((sum, p) => sum + paymentSplit(p).cash, 0),
+        onlinePaise: payments.reduce((sum, p) => sum + paymentSplit(p).online, 0),
+        lastCollectedAt: payments[0]?.paidAt ?? null,
+        collectionCount: payments.length,
       };
     })
     .sort((a, b) => a.tenant.fullName.localeCompare(b.tenant.fullName));
+}
+
+/** Billing months offered in the Collections month picker, newest first. */
+export function getCollectionMonthOptions(count = 24): { value: string; label: string }[] {
+  const current = startOfMonth(new Date());
+  return Array.from({ length: count }, (_, i) => {
+    const m = addMonths(current, -i);
+    return { value: monthKey(m), label: formatMonthYear(m) };
+  });
+}
+
+/** Unpaid balance a tenancy carries from months before `month`. */
+function earlierDuesFor(db: Db, tenancy: Tenancy, month: Date) {
+  const start = ledgerStartMonth(tenancy);
+  const collected = loadCollectedByMonth(db, [tenancy.id], start, addMonths(month, -1));
+  return earlierDues({
+    duePaise: monthlyDuePaise(tenancy),
+    startMonth: start,
+    beforeMonth: month,
+    collectedByMonth: collected.get(tenancy.id) ?? new Map(),
+  });
+}
+
+/**
+ * Everything the Collect Rent sheet needs for one active tenancy and one
+ * billing month (web `getRentCollection`). Read-only.
+ */
+export function getRentCollection(tenancyId: string, month?: string): RentCollectionView | null {
+  const db = getDb();
+  const tenancy = db.tenancies.find((t) => t.id === tenancyId && t.status === 'ACTIVE');
+  if (!tenancy) return null;
+  const property = db.properties.find((p) => p.id === tenancy.propertyId);
+  const forMonth = month ? monthFromKey(month) : startOfMonth(new Date());
+  const key = monthKey(forMonth);
+  const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
+  const room = db.rooms.find((r) => r.id === tenancy.roomId);
+  const bed = db.beds.find((b) => b.id === tenancy.bedId);
+
+  const collections = db.payments
+    .filter((p) => p.tenancyId === tenancy.id && p.status === 'PAID' && monthKey(p.forMonth) === key)
+    .sort((a, b) => (b.paidAt ?? b.createdAt).localeCompare(a.paidAt ?? a.createdAt))
+    .map((p) => {
+      const { cash, online } = paymentSplit(p);
+      return {
+        id: p.id,
+        amountPaise: p.amount,
+        cashPaise: cash,
+        onlinePaise: online,
+        method: p.method,
+        collectedAt: p.paidAt ?? p.createdAt,
+        notes: p.notes,
+        recordedBy: p.recordedByName,
+      };
+    });
+
+  const duePaise = monthlyDuePaise(tenancy);
+  const collectedPaise = collections.reduce((sum, c) => sum + c.amountPaise, 0);
+  const earlier = earlierDuesFor(db, tenancy, forMonth);
+
+  return {
+    tenancyId: tenancy.id,
+    tenantName: tenant?.fullName ?? 'Unknown',
+    room: bedLocationLabel(room?.number ?? '?', bed?.label ?? '?', property?.isFlat ?? false),
+    month: key,
+    rentPaise: tenancy.monthlyRent,
+    maintenancePaise: tenancy.maintenanceCharge,
+    duePaise,
+    collectedPaise,
+    cashPaise: collections.reduce((sum, c) => sum + c.cashPaise, 0),
+    onlinePaise: collections.reduce((sum, c) => sum + c.onlinePaise, 0),
+    balancePaise: balancePaise(duePaise, collectedPaise),
+    advancePaise: advancePaise(duePaise, collectedPaise),
+    paymentDueDay: tenancy.paymentDueDay,
+    status: resolvePaymentStatus({
+      duePaise,
+      collectedPaise,
+      paymentDueDay: tenancy.paymentDueDay,
+      month: forMonth,
+    }),
+    state: resolveCollectionState(duePaise, collectedPaise),
+    earlierDuePaise: earlier.paise,
+    earlierDueMonths: earlier.months,
+    firstMonth: monthKey(startOfMonth(tenancy.checkInDate)),
+    collections,
+  };
 }
 
 export interface InvoiceHistoryRow extends Invoice {
@@ -598,16 +994,16 @@ export interface InvoiceHistoryRow extends Invoice {
   bedLabel: string;
 }
 
+/** Recent invoices for the property, newest first (capped like the web). */
 export function getInvoiceHistory(propertyId: string): InvoiceHistoryRow[] {
   const db = getDb();
-  const tenantById = new Map(db.tenants.map((t) => [t.id, t]));
+  const { tenantById, roomById, bedById } = lookups(db);
   const tenancyById = new Map(db.tenancies.map((t) => [t.id, t]));
-  const roomById = new Map(db.rooms.map((r) => [r.id, r]));
-  const bedById = new Map(db.beds.map((b) => [b.id, b]));
 
   return db.invoices
     .filter((i) => i.propertyId === propertyId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 200)
     .map((invoice) => {
       const tenancy = tenancyById.get(invoice.tenancyId);
       return {
@@ -619,22 +1015,31 @@ export function getInvoiceHistory(propertyId: string): InvoiceHistoryRow[] {
     });
 }
 
-/** Data needed to preview + send an invoice for a tenancy (send-invoice flow). */
+/** Data needed to preview + send a bill for a tenancy (web `prepareInvoice`). */
 export interface InvoiceDraftContext {
   tenancyId: string;
   tenantName: string;
   roomNumber: string;
   bedLabel: string;
+  /** Billing month, YYYY-MM. */
+  month: string;
   rentPaise: number;
   maintenancePaise: number;
   paymentDueDay: number | null;
-  paymentStatus: PaymentStatus;
+  /** Default previous due: the unpaid balance from earlier months. */
+  previousDuePaise: number;
+  /** Collected against the billing month so far. */
+  paidPaise: number;
 }
 
-export function getInvoiceDraftContext(tenancyId: string): InvoiceDraftContext | null {
+export function getInvoiceDraftContext(
+  tenancyId: string,
+  month?: string,
+): InvoiceDraftContext | null {
   const db = getDb();
-  const tenancy = db.tenancies.find((t) => t.id === tenancyId);
+  const tenancy = db.tenancies.find((t) => t.id === tenancyId && t.status === 'ACTIVE');
   if (!tenancy) return null;
+  const billingMonth = month ? monthFromKey(month) : startOfMonth(new Date());
   const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
   const room = db.rooms.find((r) => r.id === tenancy.roomId);
   const bed = db.beds.find((b) => b.id === tenancy.bedId);
@@ -643,10 +1048,270 @@ export function getInvoiceDraftContext(tenancyId: string): InvoiceDraftContext |
     tenantName: tenant?.fullName ?? 'Unknown',
     roomNumber: room?.number ?? '?',
     bedLabel: bed?.label ?? '?',
+    month: monthKey(billingMonth),
     rentPaise: tenancy.monthlyRent,
     maintenancePaise: tenancy.maintenanceCharge,
     paymentDueDay: tenancy.paymentDueDay,
-    paymentStatus: tenancy.paymentStatus,
+    previousDuePaise: earlierDuesFor(db, tenancy, billingMonth).paise,
+    paidPaise: sumCollected(db, tenancy.id, billingMonth),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Reports (mirrors lib/queries/reports.ts)
+// ---------------------------------------------------------------------------
+
+interface ReportBucket {
+  expectedPaise: number;
+  collectedPaise: number;
+  cashPaise: number;
+  onlinePaise: number;
+  tenancies: number;
+  outstandingPaise: number;
+}
+
+export interface ReportFloorRow extends ReportBucket {
+  id: string;
+  label: string;
+}
+
+export interface ReportRoomRow extends ReportBucket {
+  id: string;
+  number: string;
+  floorLabel: string;
+  sharingType: number;
+}
+
+export interface ReportTenantRow {
+  tenancyId: string;
+  tenantId: string;
+  tenantName: string;
+  roomNumber: string;
+  bedLabel: string;
+  floorLabel: string;
+  expectedPaise: number;
+  collectedPaise: number;
+  cashPaise: number;
+  onlinePaise: number;
+  balancePaise: number;
+  collectionCount: number;
+  lastPaidAt: string | null;
+  status: PaymentStatus;
+  state: CollectionState;
+  isActive: boolean;
+}
+
+export interface RentReport {
+  month: string;
+  monthLabel: string;
+  availableMonths: { value: string; label: string }[];
+  summary: {
+    expectedPaise: number;
+    collectedPaise: number;
+    outstandingPaise: number;
+    cashPaise: number;
+    onlinePaise: number;
+    collectionRate: number;
+    tenancies: number;
+    fullyPaid: number;
+    partiallyPaid: number;
+    unpaid: number;
+  };
+  byFloor: ReportFloorRow[];
+  byRoom: ReportRoomRow[];
+  byTenant: ReportTenantRow[];
+  trend: { month: string; label: string; collectedPaise: number }[];
+}
+
+/**
+ * Rent expected against rent collected for one billing month, rolled up per
+ * floor, room and tenant. A tenancy counts in full for any month it overlaps
+ * (no pro-rating, matching the invoices); collections are grouped by the
+ * payment's own room so money from a since-ended tenancy is never dropped.
+ */
+export function getRentReport(propertyId: string, month?: string): RentReport {
+  const db = getDb();
+  const now = new Date();
+  const monthStart = month ? monthFromKey(month) : startOfMonth(now);
+  const monthEnd = endOfMonth(monthStart);
+  const key = monthKey(monthStart);
+  const { tenantById, roomById, bedById, floorById } = lookups(db);
+  const tenancyById = new Map(db.tenancies.map((t) => [t.id, t]));
+
+  const emptyBucket = (): ReportBucket => ({
+    expectedPaise: 0,
+    collectedPaise: 0,
+    cashPaise: 0,
+    onlinePaise: 0,
+    tenancies: 0,
+    outstandingPaise: 0,
+  });
+  const floors = new Map<string, ReportFloorRow & { sort: string }>();
+  const rooms = new Map<string, ReportRoomRow & { sort: string }>();
+
+  const bucketsFor = (roomId: string) => {
+    const room = roomById.get(roomId);
+    const floor = room ? floorById.get(room.floorId) : undefined;
+    const fKey = floor?.id ?? 'none';
+    let f = floors.get(fKey);
+    if (!f) {
+      f = { ...emptyBucket(), id: fKey, label: floorLabel(db, floor), sort: floorSortKey(db, floor) };
+      floors.set(fKey, f);
+    }
+    let r = rooms.get(roomId);
+    if (!r) {
+      r = {
+        ...emptyBucket(),
+        id: roomId,
+        number: room?.number ?? '?',
+        floorLabel: floorLabel(db, floor),
+        sharingType: room?.sharingType ?? 0,
+        sort: `${floorSortKey(db, floor)}-${room?.number ?? ''}`,
+      };
+      rooms.set(roomId, r);
+    }
+    return [f, r];
+  };
+
+  // Collections first, so a per-tenancy total is ready for the tenant rows.
+  const payments = db.payments.filter(
+    (p) => p.propertyId === propertyId && p.status === 'PAID' && monthKey(p.forMonth) === key,
+  );
+  const byTenancy = new Map<
+    string,
+    { collected: number; cash: number; online: number; count: number; lastPaidAt: string | null }
+  >();
+  for (const p of payments) {
+    const { cash, online } = paymentSplit(p);
+    const at = p.paidAt ?? p.createdAt;
+    const cur = byTenancy.get(p.tenancyId) ?? {
+      collected: 0,
+      cash: 0,
+      online: 0,
+      count: 0,
+      lastPaidAt: null,
+    };
+    cur.collected += p.amount;
+    cur.cash += cash;
+    cur.online += online;
+    cur.count += 1;
+    if (!cur.lastPaidAt || at > cur.lastPaidAt) cur.lastPaidAt = at;
+    byTenancy.set(p.tenancyId, cur);
+
+    const tenancy = tenancyById.get(p.tenancyId);
+    if (!tenancy) continue;
+    for (const bucket of bucketsFor(tenancy.roomId)) {
+      bucket.collectedPaise += p.amount;
+      bucket.cashPaise += cash;
+      bucket.onlinePaise += online;
+    }
+  }
+
+  const overlapping = db.tenancies.filter(
+    (t) =>
+      t.propertyId === propertyId &&
+      toDate(t.checkInDate) <= monthEnd &&
+      (!t.checkOutDate || toDate(t.checkOutDate) >= monthStart),
+  );
+
+  const byTenant: ReportTenantRow[] = overlapping
+    .map((t) => {
+      const expected = monthlyDuePaise(t);
+      const c = byTenancy.get(t.id);
+      const collectedPaise = c?.collected ?? 0;
+      for (const bucket of bucketsFor(t.roomId)) {
+        bucket.expectedPaise += expected;
+        bucket.tenancies += 1;
+      }
+      const room = roomById.get(t.roomId);
+      return {
+        tenancyId: t.id,
+        tenantId: t.tenantId,
+        tenantName: tenantById.get(t.tenantId)?.fullName ?? 'Unknown',
+        roomNumber: room?.number ?? '?',
+        bedLabel: bedById.get(t.bedId)?.label ?? '?',
+        floorLabel: floorLabel(db, room ? floorById.get(room.floorId) : undefined),
+        expectedPaise: expected,
+        collectedPaise,
+        cashPaise: c?.cash ?? 0,
+        onlinePaise: c?.online ?? 0,
+        balancePaise: balancePaise(expected, collectedPaise),
+        collectionCount: c?.count ?? 0,
+        lastPaidAt: c?.lastPaidAt ?? null,
+        status: resolvePaymentStatus({
+          duePaise: expected,
+          collectedPaise,
+          paymentDueDay: t.paymentDueDay,
+          month: monthStart,
+        }),
+        state: resolveCollectionState(expected, collectedPaise),
+        isActive: t.status === 'ACTIVE',
+      };
+    })
+    .sort((a, b) => a.tenantName.localeCompare(b.tenantName));
+
+  const finish = <T extends ReportBucket & { sort: string }>(rows: T[]) =>
+    rows
+      .sort((a, b) => a.sort.localeCompare(b.sort))
+      .map(({ sort: _sort, ...rest }) => ({
+        ...rest,
+        outstandingPaise: balancePaise(rest.expectedPaise, rest.collectedPaise),
+      }));
+
+  const expectedPaise = byTenant.reduce((sum, t) => sum + t.expectedPaise, 0);
+  const collectedPaise = payments.reduce((sum, p) => sum + p.amount, 0);
+
+  // Trend: collections per month, oldest first, gaps filled with zero.
+  const trendFrom = addMonths(monthStart, -11);
+  const trendMap = new Map<string, number>();
+  for (const p of db.payments) {
+    if (p.propertyId !== propertyId || p.status !== 'PAID') continue;
+    const t = toDate(p.forMonth);
+    if (t < trendFrom || t > monthStart) continue;
+    const k = monthKey(t);
+    trendMap.set(k, (trendMap.get(k) ?? 0) + p.amount);
+  }
+  const trend = Array.from({ length: 12 }, (_, i) => {
+    const m = addMonths(monthStart, -(11 - i));
+    const k = monthKey(m);
+    return { month: k, label: formatShortMonth(m), collectedPaise: trendMap.get(k) ?? 0 };
+  });
+
+  // Every month from the property's first activity, capped at three years.
+  const firstActivity = db.tenancies
+    .filter((t) => t.propertyId === propertyId)
+    .reduce<Date | null>((min, t) => {
+      const d = startOfMonth(t.checkInDate);
+      return !min || d < min ? d : min;
+    }, null);
+  const current = startOfMonth(now);
+  const floorMonth = addMonths(current, -35);
+  const from = firstActivity && firstActivity > floorMonth ? firstActivity : floorMonth;
+  const availableMonths: { value: string; label: string }[] = [];
+  for (let m = current; m >= from; m = addMonths(m, -1)) {
+    availableMonths.push({ value: monthKey(m), label: formatMonthYear(m) });
+  }
+
+  return {
+    month: key,
+    monthLabel: formatMonthYear(monthStart),
+    availableMonths,
+    summary: {
+      expectedPaise,
+      collectedPaise,
+      outstandingPaise: balancePaise(expectedPaise, collectedPaise),
+      cashPaise: byTenant.reduce((sum, t) => sum + t.cashPaise, 0),
+      onlinePaise: byTenant.reduce((sum, t) => sum + t.onlinePaise, 0),
+      collectionRate: expectedPaise > 0 ? collectedPaise / expectedPaise : 0,
+      tenancies: byTenant.length,
+      fullyPaid: byTenant.filter((t) => t.balancePaise === 0).length,
+      partiallyPaid: byTenant.filter((t) => t.balancePaise > 0 && t.collectedPaise > 0).length,
+      unpaid: byTenant.filter((t) => t.collectedPaise === 0).length,
+    },
+    byFloor: finish([...floors.values()]),
+    byRoom: finish([...rooms.values()]),
+    byTenant,
+    trend,
   };
 }
 
@@ -784,41 +1449,4 @@ export function getRoomOptions(propertyId: string): RoomOption[] {
     .filter((r) => r.propertyId === propertyId)
     .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
     .map(({ id, number }) => ({ id, number }));
-}
-
-/** Current-month payments summary used by the collections header. */
-export interface CollectionsSummary {
-  /** Paise collected this month (PAID payments). */
-  collectedPaise: number;
-  /** Paise still due from active tenancies this cycle. */
-  outstandingPaise: number;
-  paidCount: number;
-  unpaidCount: number;
-}
-
-export function getCollectionsSummary(propertyId: string): CollectionsSummary {
-  const db = getDb();
-  const now = new Date();
-  const active = db.tenancies.filter(
-    (t) => t.propertyId === propertyId && t.status === 'ACTIVE',
-  );
-  const collectedPaise = db.payments
-    .filter(
-      (p) =>
-        p.propertyId === propertyId &&
-        p.status === 'PAID' &&
-        toDate(p.forMonth).getTime() === startOfMonth(now).getTime(),
-    )
-    .reduce((sum, p) => sum + p.amount, 0);
-  const unpaid = active.filter((t) => t.paymentStatus !== 'PAID');
-
-  return {
-    collectedPaise,
-    outstandingPaise: unpaid.reduce(
-      (sum, t) => sum + t.monthlyRent + t.maintenanceCharge,
-      0,
-    ),
-    paidCount: active.length - unpaid.length,
-    unpaidCount: unpaid.length,
-  };
 }

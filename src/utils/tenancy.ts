@@ -5,16 +5,16 @@
  * the tenant profile — the rules must stay identical to the backend.
  */
 
-import type { DepositStatus, PaymentStatus } from '@/types';
+import type { DepositStatus } from '@/types';
 import {
   addDays,
   addMonths,
   differenceInCalendarDays,
-  setDayOfMonth,
   startOfDay,
   startOfMonth,
   toDate,
 } from './date';
+import { rentDueDate, type CollectionState } from './rent';
 
 /** Fixed system-wide notice period. There is intentionally no per-tenancy override. */
 export const NOTICE_PERIOD_DAYS = 15;
@@ -45,23 +45,17 @@ export function resolveDepositStatusOnVacate(
 }
 
 /**
- * Human copy for when the current rent cycle is due: the tenancy's due day
- * (default 5th); once PAID the next due date rolls to next month.
+ * Human copy for when rent is next due: this month's due date (web
+ * `rentDueDate`), rolling to next month's once this month is fully paid.
  */
 export function rentDueText(
-  paymentStatus: PaymentStatus,
+  state: CollectionState,
   paymentDueDay: number | null,
   now: Date = new Date(),
 ): string {
   const today = startOfDay(now);
-  const dueDay = paymentDueDay || 5;
-
-  let dueMonth = startOfMonth(today);
-  if (paymentStatus === 'PAID') {
-    dueMonth = addMonths(dueMonth, 1);
-  }
-
-  const dueDate = setDayOfMonth(dueMonth, dueDay);
+  const month = startOfMonth(today);
+  const dueDate = rentDueDate(paymentDueDay, state === 'PAID' ? addMonths(month, 1) : month);
   const daysLeft = differenceInCalendarDays(dueDate, today);
 
   if (daysLeft === 0) return 'Due today';
@@ -70,17 +64,4 @@ export function rentDueText(
     return `Overdue by ${n} day${n === 1 ? '' : 's'}`;
   }
   return `Due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
-}
-
-/**
- * The amount an unpaid tenancy owes for the current cycle: rent + maintenance.
- * Once PAID the tenant owes nothing for the cycle. (Collections page rule.)
- */
-export function currentCycleDuePaise(tenancy: {
-  paymentStatus: PaymentStatus;
-  monthlyRent: number;
-  maintenanceCharge: number;
-}): number {
-  if (tenancy.paymentStatus === 'PAID') return 0;
-  return tenancy.monthlyRent + tenancy.maintenanceCharge;
 }

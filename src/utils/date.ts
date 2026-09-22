@@ -75,6 +75,20 @@ export function formatFullDate(value: string | Date): string {
   return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/** "12 March 2026" (web `d MMMM yyyy`). */
+export function formatLongDate(value: string | Date): string {
+  const d = toDate(value);
+  return `${d.getDate()} ${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** "12 Mar 2026, 4:05 PM" — when a collection was handed over. */
+export function formatDateTime(value: string | Date): string {
+  const d = toDate(value);
+  const h = d.getHours() % 12 || 12;
+  const ampm = d.getHours() < 12 ? 'AM' : 'PM';
+  return `${formatFullDate(d)}, ${h}:${pad2(d.getMinutes())} ${ampm}`;
+}
+
 /** "12 Mar" */
 export function formatDayMonth(value: string | Date): string {
   const d = toDate(value);

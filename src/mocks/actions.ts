@@ -10,19 +10,30 @@
 import type {
   ComplaintPriority,
   ComplaintStatus,
+  Invoice,
   PaymentMethod,
   PaymentStatus,
+  Role,
   Tenancy,
 } from '@/types';
 import {
+  balancePaise,
+  bedLocationLabel,
+  formatDayMonth,
+  formatFullDate,
   formatINR,
   formatMonthYear,
+  monthFromKey,
+  monthlyDuePaise,
+  ordinal,
   resolveDepositStatusOnVacate,
   startOfMonth,
   toDate,
   vacateByDate,
 } from '@/utils';
 import { createInvoiceRecord, getDb, newId, notifyDbChanged } from './db';
+import { recordPayment, refreshPaymentStatus, settleMonth, sumCollected } from './ledger';
+import { getCollectionsData, type CollectionRow } from './queries';
 
 /** Same success/error envelope as the web's src/lib/action-result.ts. */
 export type ActionResult<T = undefined> =
@@ -58,122 +69,252 @@ function pushNotification(
 }
 
 // ---------------------------------------------------------------------------
-// Collections
+// Collections (mirrors lib/actions/collections.ts)
 // ---------------------------------------------------------------------------
 
-export interface MarkRentPaidInput {
-  tenancyId: string;
-  method?: PaymentMethod;
-  /** Paise. Required when method is SPLIT. */
-  cashAmount?: number;
-  /** Paise. Required when method is SPLIT. */
-  onlineAmount?: number;
-  recordedByName?: string;
+/** Mocked WhatsApp delivery outcome for an invoice (web `deliverInvoice`). */
+function deliver(invoice: Invoice, tenantPhone: string | null): boolean {
+  if (!tenantPhone) {
+    invoice.status = 'FAILED';
+    invoice.sentAt = null;
+    invoice.lastError = 'Tenant has no phone number on file';
+    return false;
+  }
+  invoice.status = 'SENT';
+  invoice.sentAt = new Date().toISOString();
+  invoice.lastError = null;
+  return true;
+}
+
+/** Outcome of the invoice auto-issued for a collection. */
+export interface IssuedInvoice {
+  number: string | null;
+  delivered: boolean;
+  error: string | null;
 }
 
 /**
- * Record the current cycle's rent as received: creates a PAID payment for
- * rent + maintenance and flips the tenancy's cycle snapshot to PAID.
+ * Issue + send the invoice for one recorded collection (web
+ * `issueInvoiceForPayment`): links it to the payment and snapshots what this
+ * collection brought in and the month's total so far.
  */
-export function markRentPaid(input: MarkRentPaidInput): ActionResult {
+function issueInvoiceForPayment(paymentId: string): IssuedInvoice {
   const db = getDb();
-  const tenancy = db.tenancies.find((t) => t.id === input.tenancyId);
-  if (!tenancy || tenancy.status !== 'ACTIVE') return err('Tenancy not found.');
-  if (tenancy.paymentStatus === 'PAID') return err('This cycle is already paid.');
+  const payment = db.payments.find((p) => p.id === paymentId);
+  const tenancy = payment ? db.tenancies.find((t) => t.id === payment.tenancyId) : null;
+  const property = tenancy ? db.properties.find((p) => p.id === tenancy.propertyId) : null;
+  if (!payment || !tenancy || !property) {
+    return { number: null, delivered: false, error: 'Collection not found' };
+  }
+  const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
+  const invoice = createInvoiceRecord(db, {
+    tenancy,
+    propertySlug: property.slug,
+    billingMonth: toDate(payment.forMonth),
+    issueDate: new Date(),
+    paymentId: payment.id,
+    receivedPaise: payment.amount,
+  });
+  const delivered = deliver(invoice, tenant?.phone ?? null);
+  return { number: invoice.number, delivered, error: invoice.lastError };
+}
 
-  const amount = tenancy.monthlyRent + tenancy.maintenanceCharge;
-  const method = input.method ?? 'CASH';
-  if (method === 'SPLIT') {
+export interface CollectRentInput {
+  tenancyId: string;
+  /** Billing month this collection settles, YYYY-MM. */
+  forMonth: string;
+  /** Paise. */
+  amount: number;
+  method: PaymentMethod;
+  /** Paise, SPLIT only. */
+  cashAmount?: number;
+  /** Paise, SPLIT only. */
+  onlineAmount?: number;
+  /** When the money changed hands (ISO). */
+  collectedAt: string;
+  notes?: string | null;
+  /** Issue the invoice for this collection and send it on WhatsApp. */
+  sendInvoice: boolean;
+  recordedByName?: string | null;
+}
+
+export interface CollectRentResult {
+  paymentId: string;
+  balancePaise: number;
+  fullyPaid: boolean;
+  /** The invoice issued for this collection; null when the staff opted out. */
+  invoice: IssuedInvoice | null;
+}
+
+/**
+ * Record one rent collection — the money actually received, how (cash /
+ * online / both) and when. A month can take several collections, so each is
+ * its own Payment row and the tenancy snapshot is re-derived from the ledger.
+ * The collection is committed FIRST: an invoice failure never loses it.
+ */
+export function collectRent(input: CollectRentInput): ActionResult<CollectRentResult> {
+  const db = getDb();
+  const tenancy = db.tenancies.find((t) => t.id === input.tenancyId && t.status === 'ACTIVE');
+  if (!tenancy) return err('Active tenancy not found for this property');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.forMonth)) return err('Select a billing month');
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    return err('Enter the amount collected');
+  }
+  if (input.amount > 1_000_000_000) return err('Amount is too large');
+  if (input.method === 'SPLIT') {
     const cash = input.cashAmount ?? 0;
     const online = input.onlineAmount ?? 0;
-    if (cash + online !== amount) {
-      return err('Split amounts must add up to the total due.');
+    // Guard the invariant the reports rely on: the split reconstructs the total.
+    if (cash + online !== input.amount) {
+      return err(`Cash + online must add up to ${formatINR(input.amount)}`);
     }
   }
+  const at = toDate(input.collectedAt);
+  if (Number.isNaN(at.getTime())) return err('Select when the payment was collected');
+  if (at.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+    return err('The collection date cannot be in the future');
+  }
 
-  const now = new Date();
-  db.payments.push({
-    id: newId('payment'),
-    propertyId: tenancy.propertyId,
-    tenancyId: tenancy.id,
-    tenantId: tenancy.tenantId,
-    amount,
-    forMonth: startOfMonth(now).toISOString(),
-    status: 'PAID',
-    method,
-    cashAmount: method === 'SPLIT' ? input.cashAmount ?? null : null,
-    onlineAmount: method === 'SPLIT' ? input.onlineAmount ?? null : null,
-    paidAt: now.toISOString(),
-    notes: null,
+  const forMonth = monthFromKey(input.forMonth);
+  // Rent cannot be owed for a month before the tenant moved in.
+  if (forMonth < startOfMonth(tenancy.checkInDate)) {
+    return err(
+      `The tenant moved in on ${formatFullDate(tenancy.checkInDate)} — pick ${formatMonthYear(tenancy.checkInDate)} or later.`,
+    );
+  }
+
+  const payment = recordPayment(db, {
+    tenancy,
+    amount: input.amount,
+    forMonth,
+    method: input.method,
+    cashPaise: input.cashAmount,
+    onlinePaise: input.onlineAmount,
+    at,
+    notes: input.notes?.trim() || null,
     recordedByName: input.recordedByName ?? null,
-    createdAt: now.toISOString(),
   });
-  tenancy.paymentStatus = 'PAID';
+  refreshPaymentStatus(db, tenancy);
+
+  const invoice = input.sendInvoice ? issueInvoiceForPayment(payment.id) : null;
 
   const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
   pushNotification(
     tenancy.propertyId,
     'PAYMENT',
     'Rent received',
-    `${tenant?.fullName ?? 'Tenant'} paid ${formatINR(amount)} for ${formatMonthYear(now)}.`,
+    `${tenant?.fullName ?? 'Tenant'} paid ${formatINR(input.amount)} for ${formatMonthYear(forMonth)}.`,
   );
 
   notifyDbChanged();
-  return ok(undefined);
+  const remaining = balancePaise(monthlyDuePaise(tenancy), sumCollected(db, tenancy.id, forMonth));
+  return ok({ paymentId: payment.id, balancePaise: remaining, fullyPaid: remaining === 0, invoice });
 }
 
 /**
- * Flip a tenancy's cycle status from the tenant profile. Marking unpaid
- * removes the current month's payment row (undo path); marking paid goes
- * through markRentPaid.
+ * Delete a wrongly entered collection and re-derive the tenancy snapshot.
+ * ADMIN/MANAGER only. An invoice already issued for it is kept (its link to
+ * the payment is cleared) so the record of what was sent survives.
  */
-export function togglePaymentStatus(
-  tenancyId: string,
-  recordedByName?: string,
-): ActionResult {
-  const db = getDb();
-  const tenancy = db.tenancies.find((t) => t.id === tenancyId);
-  if (!tenancy || tenancy.status !== 'ACTIVE') return err('Tenancy not found.');
-
-  if (tenancy.paymentStatus !== 'PAID') {
-    return markRentPaid({ tenancyId, recordedByName });
+export function deleteRentCollection(paymentId: string, role: Role | undefined): ActionResult {
+  if (role !== 'ADMIN' && role !== 'MANAGER') {
+    return err('Only an admin or manager can delete a collection');
   }
-
-  const currentMonth = startOfMonth(new Date()).getTime();
-  const index = db.payments.findIndex(
-    (p) => p.tenancyId === tenancyId && toDate(p.forMonth).getTime() === currentMonth,
-  );
-  if (index >= 0) db.payments.splice(index, 1);
-  tenancy.paymentStatus = 'PENDING';
-
+  const db = getDb();
+  const index = db.payments.findIndex((p) => p.id === paymentId);
+  if (index < 0) return err('Collection not found');
+  const [payment] = db.payments.splice(index, 1);
+  for (const invoice of db.invoices) {
+    if (invoice.paymentId === payment.id) invoice.paymentId = null;
+  }
+  const tenancy = db.tenancies.find((t) => t.id === payment.tenancyId);
+  if (tenancy) refreshPaymentStatus(db, tenancy);
   notifyDbChanged();
   return ok(undefined);
 }
 
-/** WhatsApp rent reminder for one tenancy (delivery mocked). */
-export function sendRentReminder(tenancyId: string): ActionResult<{ tenantName: string }> {
-  const db = getDb();
-  const tenancy = db.tenancies.find((t) => t.id === tenancyId);
-  if (!tenancy) return err('Tenancy not found.');
-  if (tenancy.paymentStatus === 'PAID') return err('This tenant has already paid.');
-  const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
-  return ok({ tenantName: tenant?.fullName ?? 'Tenant' });
+/** Reminder copy for one row — states that tenant's own balance (web `buildReminderBody`). */
+export function buildReminderBody(row: CollectionRow, propertyName: string, isFlat: boolean): string {
+  const room = bedLocationLabel(row.roomNumber, row.bedLabel, isFlat);
+  const month = formatMonthYear(monthFromKey(row.month));
+  const lines = [`Hi ${row.tenant.fullName},`, ''];
+  if (row.outstandingPaise > 0) {
+    lines.push(
+      `This is a friendly reminder that ${formatINR(row.outstandingPaise)} of your rent for ${room} is pending.`,
+      '',
+    );
+    if (row.balancePaise > 0) {
+      lines.push(
+        row.collectedPaise > 0
+          ? `${month}: ${formatINR(row.collectedPaise)} of ${formatINR(row.duePaise)} paid — ${formatINR(row.balancePaise)} due by ${formatDayMonth(row.dueDate)}.`
+          : `${month}: ${formatINR(row.duePaise)} due by ${formatDayMonth(row.dueDate)}.`,
+      );
+    }
+    if (row.earlierDuePaise > 0) {
+      lines.push(`Earlier months: ${formatINR(row.earlierDuePaise)} unpaid.`);
+    }
+    lines.push(
+      '',
+      'Kindly make the payment at your earliest convenience. Please ignore this message if you have already paid.',
+    );
+  } else {
+    lines.push(
+      `This is a reminder that your monthly rent for ${room} is ${formatINR(row.duePaise)}, due by the ${ordinal(toDate(row.dueDate).getDate())} of each month.`,
+      '',
+      `Your rent for ${month} has already been received in full — thank you!`,
+    );
+  }
+  lines.push('', 'Thank you,', propertyName);
+  return lines.join('\n');
 }
 
-/** WhatsApp reminder to every unpaid active tenancy (delivery mocked). */
-export function remindEveryone(propertyId: string): ActionResult<{ count: number }> {
-  const count = getDb().tenancies.filter(
-    (t) =>
-      t.propertyId === propertyId &&
-      t.status === 'ACTIVE' &&
-      t.paymentStatus !== 'PAID',
-  ).length;
-  if (count === 0) return err('Everyone has paid — nothing to remind.');
-  return ok({ count });
+/** WhatsApp rent reminder for one tenancy. Refused when nothing is outstanding. */
+export function sendRentReminder(tenancyId: string): ActionResult<{ tenantName: string }> {
+  const db = getDb();
+  const tenancy = db.tenancies.find((t) => t.id === tenancyId && t.status === 'ACTIVE');
+  if (!tenancy) return err('Active tenancy not found for this property');
+  const row = getCollectionsData(tenancy.propertyId).find((r) => r.id === tenancyId);
+  if (!row) return err('Active tenancy not found for this property');
+  if (row.outstandingPaise === 0) return err('This tenant has no rent outstanding');
+  if (!row.tenant.phone) return err('Tenant has no phone number on file');
+  return ok({ tenantName: row.tenant.fullName });
+}
+
+export interface ReminderBatchResult {
+  sent: number;
+  failed: number;
+  skipped: number;
+  /** Rows the batch targeted. */
+  eligible: number;
+}
+
+function sendReminders(rows: CollectionRow[]): ReminderBatchResult {
+  let sent = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    if (!row.tenant.phone) skipped++;
+    else sent++;
+  }
+  return { sent, failed: 0, skipped, eligible: rows.length };
+}
+
+/** Remind every active tenant; each message states that tenant's own position. */
+export function remindAllTenants(propertyId: string): ActionResult<ReminderBatchResult> {
+  return ok(sendReminders(getCollectionsData(propertyId)));
+}
+
+/**
+ * Remind ONLY tenants with rent outstanding — an unpaid or part-paid current
+ * month, or an unpaid earlier month. Fully paid tenants are left alone.
+ */
+export function remindPendingTenants(propertyId: string): ActionResult<ReminderBatchResult> {
+  return ok(sendReminders(getCollectionsData(propertyId).filter((r) => r.outstandingPaise > 0)));
 }
 
 export interface SendInvoiceInput {
   tenancyId: string;
+  /** Billing month, YYYY-MM. Defaults to the current month. */
+  billingMonth?: string;
   /** Paise. */
   previousDuePaise?: number;
   /** Paise. */
@@ -184,33 +325,39 @@ export interface SendInvoiceInput {
   notes?: string | null;
 }
 
-/** Generate this month's invoice for a tenancy and send it (mocked SENT). */
+/**
+ * Send a bill BEFORE payment (the manual Send Invoice). Recording a collection
+ * already issues its own invoice. The row is kept as FAILED when delivery
+ * fails, so it can be resent from Invoice History.
+ */
 export function sendInvoice(input: SendInvoiceInput): ActionResult<{ number: string }> {
   const db = getDb();
-  const tenancy = db.tenancies.find((t) => t.id === input.tenancyId);
-  if (!tenancy || tenancy.status !== 'ACTIVE') return err('Tenancy not found.');
+  const tenancy = db.tenancies.find((t) => t.id === input.tenancyId && t.status === 'ACTIVE');
+  if (!tenancy) return err('Active tenancy not found for this property');
   const property = db.properties.find((p) => p.id === tenancy.propertyId);
   if (!property) return err('Property not found.');
+  const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
+  if (!tenant?.phone) return err('Tenant has no phone number on file');
 
-  const now = new Date();
+  const billingMonth = input.billingMonth ? monthFromKey(input.billingMonth) : startOfMonth(new Date());
   const invoice = createInvoiceRecord(db, {
     tenancy,
     propertySlug: property.slug,
-    billingMonth: startOfMonth(now),
-    issueDate: now,
+    billingMonth,
+    issueDate: new Date(),
     previousDuePaise: input.previousDuePaise ?? 0,
     extraChargesPaise: input.extraChargesPaise ?? 0,
     extraChargesLabel: input.extraChargesLabel ?? null,
     discountPaise: input.discountPaise ?? 0,
     notes: input.notes ?? null,
   });
+  deliver(invoice, tenant.phone);
 
-  const tenant = db.tenants.find((t) => t.id === tenancy.tenantId);
   pushNotification(
     tenancy.propertyId,
     'INVOICE',
     'Invoice sent',
-    `${invoice.number} (${formatINR(invoice.totalPaise)}) sent to ${tenant?.fullName ?? 'tenant'} on WhatsApp.`,
+    `${invoice.number} (${formatINR(invoice.totalPaise)}) sent to ${tenant.fullName} on WhatsApp.`,
   );
 
   notifyDbChanged();
@@ -221,11 +368,68 @@ export function sendInvoice(input: SendInvoiceInput): ActionResult<{ number: str
 export function resendInvoice(invoiceId: string): ActionResult {
   const db = getDb();
   const invoice = db.invoices.find((i) => i.id === invoiceId);
-  if (!invoice) return err('Invoice not found.');
-  invoice.status = 'SENT';
-  invoice.sentAt = new Date().toISOString();
+  if (!invoice) return err('Invoice not found');
+  const tenant = db.tenants.find((t) => t.id === invoice.tenantId);
+  const delivered = deliver(invoice, tenant?.phone ?? null);
   notifyDbChanged();
-  return ok(undefined);
+  return delivered ? ok(undefined) : err(invoice.lastError ?? 'Failed to resend the invoice');
+}
+
+// ---------------------------------------------------------------------------
+// Rooms (mirrors lib/actions/rooms.ts)
+// ---------------------------------------------------------------------------
+
+export interface SetRoomRentInput {
+  roomId: string;
+  /** Paise; null clears the room default. */
+  rent: number | null;
+  /** Paise; null clears the room default. */
+  maintenance: number | null;
+  /** Also push the new amounts onto every ACTIVE tenancy in the room. */
+  applyToOccupants: boolean;
+}
+
+/**
+ * Set a room's rent once instead of typing it into every bed. Stored as room
+ * defaults that pre-fill a new move-in, optionally pushed onto the current
+ * occupants. ADMIN/MANAGER only.
+ */
+export function setRoomRent(
+  input: SetRoomRentInput,
+  role: Role | undefined,
+): ActionResult<{ updatedTenancies: number }> {
+  if (role !== 'ADMIN' && role !== 'MANAGER') {
+    return err('Administrator or manager access required');
+  }
+  for (const value of [input.rent, input.maintenance]) {
+    if (value !== null && (!Number.isInteger(value) || value < 0)) {
+      return err('Enter a valid amount');
+    }
+  }
+  if (input.applyToOccupants && input.rent === null) {
+    return err('Enter a rent amount before applying it to the current occupants');
+  }
+  const db = getDb();
+  const room = db.rooms.find((r) => r.id === input.roomId);
+  if (!room) return err('Room not found');
+
+  room.defaultRent = input.rent;
+  room.defaultMaintenance = input.maintenance;
+
+  let updatedTenancies = 0;
+  if (input.applyToOccupants && input.rent !== null) {
+    for (const tenancy of db.tenancies) {
+      if (tenancy.roomId !== room.id || tenancy.status !== 'ACTIVE') continue;
+      tenancy.monthlyRent = input.rent;
+      tenancy.maintenanceCharge = input.maintenance ?? 0;
+      // Changing what is owed changes whether the month is settled.
+      refreshPaymentStatus(db, tenancy);
+      updatedTenancies++;
+    }
+  }
+
+  notifyDbChanged();
+  return ok({ updatedTenancies });
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +578,9 @@ export interface AssignTenantInput {
 }
 
 /** The primary floor-manager workflow: put a tenant on an empty bed. */
-export function assignTenantToBed(input: AssignTenantInput): ActionResult<{ tenantId: string }> {
+export function assignTenantToBed(
+  input: AssignTenantInput,
+): ActionResult<{ tenantId: string; invoice: IssuedInvoice | null }> {
   const db = getDb();
   const bed = db.beds.find((b) => b.id === input.bedId);
   if (!bed) return err('Bed not found.');
@@ -385,6 +591,9 @@ export function assignTenantToBed(input: AssignTenantInput): ActionResult<{ tena
   }
   if (!Number.isInteger(input.monthlyRent) || input.monthlyRent <= 0) {
     return err('Monthly rent must be greater than zero.');
+  }
+  if (Number.isNaN(toDate(input.checkInDate).getTime())) {
+    return err('Enter a valid check-in date.');
   }
   if (input.paymentStatus === 'PAID' && input.paymentMethod === 'SPLIT') {
     const total = input.monthlyRent + (input.maintenanceCharge ?? 0);
@@ -432,31 +641,40 @@ export function assignTenantToBed(input: AssignTenantInput): ActionResult<{ tena
     noticeGivenDate: null,
     expectedLeavingDate: null,
     checkOutDate: null,
+    createdAt: now,
   };
   db.tenancies.push(tenancy);
   bed.status = 'OCCUPIED';
 
+  // Marking the first cycle Paid records whatever is outstanding for the month
+  // as a collection (web `settleMonth`), then issues its invoice; the snapshot
+  // is always re-derived from the ledger.
+  let invoice: IssuedInvoice | null = null;
   if (input.paymentStatus === 'PAID') {
-    tenancy.paymentStatus = 'PENDING';
-    markRentPaid({
-      tenancyId: tenancy.id,
-      method: input.paymentMethod,
-      cashAmount: input.cashAmount,
-      onlineAmount: input.onlineAmount,
-      recordedByName: input.recordedByName,
+    const paymentId = settleMonth(db, {
+      tenancy,
+      forMonth: startOfMonth(new Date()),
+      method: input.paymentMethod ?? 'CASH',
+      cashPaise: input.cashAmount,
+      onlinePaise: input.onlineAmount,
+      recordedByName: input.recordedByName ?? null,
+      at: new Date(),
     });
+    if (paymentId) invoice = issueInvoiceForPayment(paymentId);
   }
+  refreshPaymentStatus(db, tenancy);
 
   const room = db.rooms.find((r) => r.id === bed.roomId);
+  const isFlat = db.properties.find((p) => p.id === bed.propertyId)?.isFlat ?? false;
   pushNotification(
     bed.propertyId,
     'TENANT',
     'Tenant checked in',
-    `${tenant.fullName} moved into ${room ? `Room ${room.number} · Bed ${bed.label}` : 'a bed'}.`,
+    `${tenant.fullName} moved into ${room ? bedLocationLabel(room.number, bed.label, isFlat) : 'a bed'}.`,
   );
 
   notifyDbChanged();
-  return ok({ tenantId: tenant.id });
+  return ok({ tenantId: tenant.id, invoice });
 }
 
 /** Record that the tenant served notice today; vacate-by is +15 days. */

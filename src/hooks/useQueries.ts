@@ -6,8 +6,9 @@
 
 import {
   getAssignableUsers,
-  getCollections,
-  getCollectionsSummary,
+  getCollectionsData,
+  getRentCollection,
+  getRentReport,
   getComplaint,
   getComplaints,
   getDashboardData,
@@ -58,12 +59,21 @@ export function useTenantProfile(tenantId: string) {
   return useAsyncData(() => getTenantProfile(tenantId), [tenantId]);
 }
 
-export function useCollections(propertyId: string) {
-  return useAsyncData(() => getCollections(propertyId), [propertyId]);
+/** Dues for one billing month (YYYY-MM; the current month when omitted). */
+export function useCollections(propertyId: string, month?: string) {
+  return useAsyncData(() => getCollectionsData(propertyId, month), [propertyId, month]);
 }
 
-export function useCollectionsSummary(propertyId: string) {
-  return useAsyncData(() => getCollectionsSummary(propertyId), [propertyId]);
+/** One tenancy's rent position for a month — the Collect Rent sheet. */
+export function useRentCollection(tenancyId: string | null, month?: string) {
+  return useAsyncData(
+    () => (tenancyId ? getRentCollection(tenancyId, month) : null),
+    [tenancyId, month],
+  );
+}
+
+export function useRentReport(propertyId: string, month?: string) {
+  return useAsyncData(() => getRentReport(propertyId, month), [propertyId, month]);
 }
 
 export function useInvoiceHistory(propertyId: string) {

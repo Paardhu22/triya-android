@@ -15,6 +15,7 @@ import type {
   InvoiceStatus,
   PaymentStatus,
 } from '@/types';
+import type { CollectionState } from '@/utils/rent';
 
 export interface StatusMeta {
   label: string;
@@ -41,6 +42,13 @@ export const PAYMENT_STATUS_META: Record<PaymentStatus, StatusMeta> = {
   PAID: { label: 'Paid', ...TONE.green },
   PENDING: { label: 'Pending', ...TONE.amber },
   OVERDUE: { label: 'Overdue', ...TONE.red },
+};
+
+/** How much of a month has been collected — see `resolveCollectionState` in utils/rent. */
+export const COLLECTION_STATE_META: Record<CollectionState, StatusMeta> = {
+  PAID: { label: 'Fully paid', ...TONE.green },
+  PARTIAL: { label: 'Partially paid', ...TONE.amber },
+  UNPAID: { label: 'Unpaid', ...TONE.red },
 };
 
 export const COMPLAINT_STATUS_META: Record<ComplaintStatus, StatusMeta> = {
