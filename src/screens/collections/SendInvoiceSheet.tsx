@@ -4,28 +4,34 @@ import { View, StyleSheet } from 'react-native';
 import {
   BottomSheet,
   Button,
-  Divider,
   Icon,
+  KeyValue,
   TextInput,
   Typography,
+  toast,
 } from '@/components';
 import { useAction } from '@/hooks';
 import { getInvoiceDraftContext, sendInvoice } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import {
   bedLocationLabel,
   computeInvoiceTotals,
-  defaultBillingMonth,
   defaultDueDate,
   formatFullDate,
   formatINR,
   formatMonthYear,
+  invoiceBalancePaise,
+  invoiceStatusLabel,
+  monthFromKey,
+  paiseToRupees,
   rupeesToPaise,
 } from '@/utils';
 
 export interface SendInvoiceSheetProps {
   visible: boolean;
   tenancyId: string | null;
+  /** Billing month (YYYY-MM); the current month when omitted. */
+  month?: string;
   isFlat: boolean;
   onClose: () => void;
 }
@@ -38,18 +44,19 @@ function parseRupees(text: string): number {
 /**
  * SendInvoiceSheet
  *
- * The mobile version of the web's invoice preview dialog: rent and
- * maintenance come from the tenancy, staff can add previous dues, extra
- * charges, a discount and notes, and the totals are computed with the same
- * shared math the backend uses (subtotal = rent + maintenance + previous +
- * extra; total = subtotal − discount, floored at zero).
+ * The web's invoice preview dialog: a bill sent BEFORE payment (recording a
+ * collection issues its own invoice). Rent and maintenance come from the
+ * tenancy; previous due defaults to the unpaid balance from earlier months;
+ * staff can add extra charges, a discount and notes. Totals use the shared
+ * math (subtotal − discount, floored at zero) and show what the month has
+ * already collected against them.
  */
-export function SendInvoiceSheet({ visible, tenancyId, isFlat, onClose }: SendInvoiceSheetProps) {
+export function SendInvoiceSheet({ visible, tenancyId, month, isFlat, onClose }: SendInvoiceSheetProps) {
   const { busy, run } = useAction();
 
   const context = useMemo(
-    () => (tenancyId ? getInvoiceDraftContext(tenancyId) : null),
-    [tenancyId],
+    () => (visible && tenancyId ? getInvoiceDraftContext(tenancyId, month) : null),
+    [visible, tenancyId, month],
   );
 
   const [previousDue, setPreviousDue] = useState('');
@@ -58,19 +65,18 @@ export function SendInvoiceSheet({ visible, tenancyId, isFlat, onClose }: SendIn
   const [discount, setDiscount] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [sentNumber, setSentNumber] = useState<string | null>(null);
 
   useEffect(() => {
-    if (visible) {
-      setPreviousDue('');
-      setExtraCharges('');
-      setExtraLabel('');
-      setDiscount('');
-      setNotes('');
-      setError(null);
-      setSentNumber(null);
-    }
-  }, [visible, tenancyId]);
+    if (!visible) return;
+    setPreviousDue(
+      context && context.previousDuePaise > 0 ? String(paiseToRupees(context.previousDuePaise)) : '',
+    );
+    setExtraCharges('');
+    setExtraLabel('');
+    setDiscount('');
+    setNotes('');
+    setError(null);
+  }, [visible, context]);
 
   if (!context) return null;
 
@@ -82,8 +88,14 @@ export function SendInvoiceSheet({ visible, tenancyId, isFlat, onClose }: SendIn
     discountPaise: parseRupees(discount),
   };
   const { subtotalPaise, totalPaise } = computeInvoiceTotals(charges);
-  const billingMonth = defaultBillingMonth();
+  const billingMonth = monthFromKey(context.month);
   const dueDate = defaultDueDate(context.paymentDueDay, billingMonth);
+  const balance = invoiceBalancePaise(totalPaise, context.paidPaise);
+  const statusLabel = invoiceStatusLabel({
+    totalPaise,
+    paidPaise: context.paidPaise,
+    dueLabel: new Date() > dueDate ? 'Overdue' : 'Pending',
+  });
 
   async function onSend() {
     if (!tenancyId) return;
@@ -91,6 +103,7 @@ export function SendInvoiceSheet({ visible, tenancyId, isFlat, onClose }: SendIn
     const result = await run(() =>
       sendInvoice({
         tenancyId,
+        billingMonth: context?.month,
         previousDuePaise: charges.previousDuePaise,
         extraChargesPaise: charges.extraChargesPaise,
         extraChargesLabel: charges.extraChargesPaise > 0 ? extraLabel.trim() || null : null,
@@ -102,178 +115,152 @@ export function SendInvoiceSheet({ visible, tenancyId, isFlat, onClose }: SendIn
       setError(result.error);
       return;
     }
-    setSentNumber(result.data.number);
+    toast.success('Invoice sent', {
+      description: `${result.data.number} (${formatINR(totalPaise)}) sent to ${context?.tenantName} on WhatsApp.`,
+    });
+    onClose();
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Send invoice">
-      {sentNumber ? (
-        <View style={styles.sentBox}>
-          <View style={styles.sentIcon}>
-            <Icon name="check-circle" size={34} color={colors.success} />
-          </View>
-          <Typography variant="h3">Invoice sent</Typography>
-          <Typography variant="caption" color="textSecondary" style={styles.centered}>
-            {sentNumber} ({formatINR(totalPaise)}) was sent to {context.tenantName} on
-            WhatsApp.
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Send invoice"
+      subtitle={`${context.tenantName} · ${bedLocationLabel(context.roomNumber, context.bedLabel, isFlat)}`}
+      footer={
+        <Button
+          title={`Send ${formatINR(totalPaise)} on WhatsApp`}
+          icon="whatsapp"
+          loading={busy}
+          onPress={onSend}
+        />
+      }
+    >
+      <View style={styles.form}>
+        <View style={styles.billing}>
+          <Icon name="calendar-month-outline" size={16} color={colors.textSecondary} />
+          <Typography variant="small" color="textSecondary">
+            Billing {formatMonthYear(billingMonth)} · due {formatFullDate(dueDate)}
           </Typography>
-          <Button title="Done" onPress={onClose} style={styles.doneButton} />
         </View>
-      ) : (
-        <View style={styles.form}>
-          <Typography variant="caption" color="textSecondary">
-            {context.tenantName} ·{' '}
-            {bedLocationLabel(context.roomNumber, context.bedLabel, isFlat)} · Billing{' '}
-            {formatMonthYear(billingMonth)}
-          </Typography>
 
-          <View style={styles.fieldRow}>
+        <TextInput
+          label="Previous due"
+          prefix="₹"
+          placeholder="0"
+          keyboardType="decimal-pad"
+          value={previousDue}
+          onChangeText={setPreviousDue}
+          hint={
+            context.previousDuePaise > 0
+              ? `Unpaid from earlier months: ${formatINR(context.previousDuePaise)}`
+              : undefined
+          }
+        />
+        <View style={styles.twoCol}>
+          <View style={styles.col}>
             <TextInput
-              label="Previous due (₹)"
+              label="Extra charges"
+              prefix="₹"
               placeholder="0"
-              keyboardType="numeric"
-              value={previousDue}
-              onChangeText={setPreviousDue}
-              style={styles.flexInput}
+              keyboardType="decimal-pad"
+              value={extraCharges}
+              onChangeText={setExtraCharges}
             />
           </View>
-          <View style={styles.twoCol}>
-            <View style={styles.col}>
-              <TextInput
-                label="Extra charges (₹)"
-                placeholder="0"
-                keyboardType="numeric"
-                value={extraCharges}
-                onChangeText={setExtraCharges}
-              />
-            </View>
-            <View style={styles.col}>
-              <TextInput
-                label="Extra label"
-                placeholder="e.g. Electricity"
-                value={extraLabel}
-                onChangeText={setExtraLabel}
-              />
-            </View>
+          <View style={styles.col}>
+            <TextInput
+              label="Label"
+              placeholder="e.g. Electricity"
+              value={extraLabel}
+              onChangeText={setExtraLabel}
+            />
           </View>
-          <TextInput
-            label="Discount (₹)"
-            placeholder="0"
-            keyboardType="numeric"
-            value={discount}
-            onChangeText={setDiscount}
-          />
-          <TextInput
-            label="Notes"
-            placeholder="Shown on the invoice"
-            value={notes}
-            onChangeText={setNotes}
-          />
-
-          {/* Live preview — identical math to the backend */}
-          <View style={styles.preview}>
-            <PreviewRow label="Rent" value={formatINR(charges.rentPaise)} />
-            {charges.maintenancePaise > 0 && (
-              <PreviewRow label="Maintenance" value={formatINR(charges.maintenancePaise)} />
-            )}
-            {charges.previousDuePaise > 0 && (
-              <PreviewRow label="Previous due" value={formatINR(charges.previousDuePaise)} />
-            )}
-            {charges.extraChargesPaise > 0 && (
-              <PreviewRow
-                label={extraLabel.trim() || 'Extra charges'}
-                value={formatINR(charges.extraChargesPaise)}
-              />
-            )}
-            {charges.discountPaise > 0 && (
-              <PreviewRow label="Discount" value={`− ${formatINR(charges.discountPaise)}`} />
-            )}
-            <Divider verticalSpacing="xs" />
-            <PreviewRow label="Subtotal" value={formatINR(subtotalPaise)} />
-            <View style={styles.previewRow}>
-              <Typography variant="bodyMedium">Total</Typography>
-              <Typography variant="h3">{formatINR(totalPaise)}</Typography>
-            </View>
-            <Typography variant="small" color="textTertiary">
-              Due {formatFullDate(dueDate)}
-            </Typography>
-          </View>
-
-          {error && (
-            <Typography variant="caption" colorValue={colors.error}>
-              {error}
-            </Typography>
-          )}
-
-          <Button
-            title="Send on WhatsApp"
-            icon="whatsapp"
-            loading={busy}
-            onPress={onSend}
-          />
         </View>
-      )}
-    </BottomSheet>
-  );
-}
+        <TextInput
+          label="Discount"
+          prefix="₹"
+          placeholder="0"
+          keyboardType="decimal-pad"
+          value={discount}
+          onChangeText={setDiscount}
+        />
+        <TextInput
+          label="Notes"
+          placeholder="Shown on the invoice"
+          value={notes}
+          onChangeText={setNotes}
+        />
 
-function PreviewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.previewRow}>
-      <Typography variant="caption" color="textSecondary">
-        {label}
-      </Typography>
-      <Typography variant="captionMedium">{value}</Typography>
-    </View>
+        {/* Live preview — identical math to the backend */}
+        <View style={styles.preview}>
+          <Typography variant="overline" color="textSecondary" style={styles.previewTitle}>
+            Invoice preview
+          </Typography>
+          <KeyValue label="Rent" value={formatINR(charges.rentPaise)} />
+          {charges.maintenancePaise > 0 && (
+            <KeyValue label="Maintenance" value={formatINR(charges.maintenancePaise)} />
+          )}
+          {charges.previousDuePaise > 0 && (
+            <KeyValue label="Previous due" value={formatINR(charges.previousDuePaise)} />
+          )}
+          {charges.extraChargesPaise > 0 && (
+            <KeyValue
+              label={extraLabel.trim() || 'Extra charges'}
+              value={formatINR(charges.extraChargesPaise)}
+            />
+          )}
+          {charges.discountPaise > 0 && (
+            <KeyValue label="Discount" value={`− ${formatINR(charges.discountPaise)}`} />
+          )}
+          <KeyValue label="Subtotal" value={formatINR(subtotalPaise)} divider />
+          <KeyValue label="Total" value={formatINR(totalPaise)} strong />
+          {context.paidPaise > 0 && (
+            <>
+              <KeyValue label="Paid so far" value={`− ${formatINR(context.paidPaise)}`} />
+              <KeyValue label="Balance due" value={formatINR(balance)} strong divider />
+            </>
+          )}
+          <Typography variant="small" color="textTertiary">
+            Status on the invoice: {statusLabel}
+          </Typography>
+        </View>
+
+        {error && (
+          <Typography variant="caption" colorValue={colors.error}>
+            {error}
+          </Typography>
+        )}
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  fieldRow: {
+  billing: {
     flexDirection: 'row',
-  },
-  flexInput: {
-    flex: 1,
+    alignItems: 'center',
+    gap: 6,
   },
   twoCol: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm + 4,
   },
   col: {
     flex: 1,
   },
   preview: {
-    gap: spacing.xs + 2,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm + 4,
+    paddingBottom: spacing.md,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
   },
-  previewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sentBox: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-  },
-  sentIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.successLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  centered: {
-    textAlign: 'center',
-  },
-  doneButton: {
-    alignSelf: 'stretch',
-    marginTop: spacing.md,
+  previewTitle: {
+    marginBottom: 2,
   },
 });
