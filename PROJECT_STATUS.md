@@ -1,11 +1,13 @@
 # Triya Manager — Android — Project Status
 
-_Last updated: 16 July 2026_
+_Last updated: 23 September 2026 — synced with the web app through its 16 Sep 2026 commits (rent ledger, Collect Rent, auto-invoices, room rent, reports, Swiss dashboard, Inter)._
 
 The native Android companion to **Triya Manager** (the Next.js web app in
 `../triya-manager`). The mobile app mirrors the web app's business logic,
-terminology, visual language (warm ink/tan "Swiss" palette, Sora type, the
-dashboard's blueprint styling) and screen flows, adapted for touch. All data
+terminology, visual language (warm ink/tan "Swiss" palette, Inter type,
+uppercase section kickers, hairline-divided stat grids, dot + label status)
+and screen flows, adapted for touch: screens sit on a warm canvas and group
+content on white hairline surfaces instead of stacks of bordered cards. All data
 is served by a realistic in-memory mock layer shaped exactly like the web
 app's queries/actions, so swapping to the real API touches one layer only.
 
@@ -89,12 +91,59 @@ editing (name/address/city/phone/house-rules), about + sign out
 - Skeleton loading on every data screen, wired error states with retry,
   distinct "empty vs. no-match" copy everywhere, pull-to-refresh on all lists
 
+
+## September 2026 sync (web → Android)
+
+**Rent ledger** (`src/utils/rent.ts` + `src/mocks/ledger.ts`, ports of the web's
+`rent.ts` / `ledger.ts`): a Payment is one receipt, a month can hold several;
+`paymentStatus` is always re-derived from what was collected. Two orthogonal
+states everywhere — collection state (Fully paid / Partially paid / Unpaid)
+and due-date status (Overdue) — plus earlier-month arrears from the ledger
+start month. The mock seed now has real part payments, arrears, imported
+tenancies and room rent defaults; `scripts/check-mocks.ts` asserts it all.
+
+**Collections**: billing-month picker, the web's filters (Unpaid / Partially
+paid / Fully paid / Overdue / Earlier dues) with counts, due/collected/
+balance/earlier totals, per-row actions sheet. **Collect Rent** sheet (part
+payments, cash/online/split, collected-on date+time, live balance preview,
+earlier-month shortcuts, receipt history, ADMIN/MANAGER delete) issues and
+"sends" the invoice automatically. Reminders: Remind pending vs Remind
+everyone. Invoice History shows paid/balance, "for a payment of ₹X" vs bill,
+and the delivery error. The old Mark Paid / Mark Unpaid flow is gone (removed
+on the web).
+
+**Floors**: room rent defaults with Set Rent (ADMIN/MANAGER, optional apply to
+occupants), check-in pre-filled from the room rent, first month settled via
+the ledger with its invoice; beds drawn as beds; live legend counts.
+
+**Dashboard**: the web's Swiss grid — capacity + financial ledger stat grids,
+6-month collections-vs-expenses chart (tap a month), occupancy by sharing
+type / block / floor, rent settlement, notice register, recent activity.
+
+**Reports** (new, under More): month picker, 6-figure summary, 12-month trend,
+By floor / room / tenant with payment filter, CSV export via the share sheet.
+
+**Tenants**: payment filter; profile shows this month's position, Collect
+Rent, call / WhatsApp shortcuts, every receipt.
+
+**UX platform**: Inter; collapsing large-title headers; custom tab bar with
+animated indicator; drag-to-dismiss bottom sheets with pinned footers;
+animated segmented controls; non-blocking toasts (replacing Alerts); haptics;
+native date/time pickers (`@react-native-community/datetimepicker`);
+stale-while-revalidate month switching.
+
+**Not ported (web-only by design)**: bulk spreadsheet Import (`/import`) and
+the Admin page.
+
+**Native rebuild required**: `expo-haptics` and the datetimepicker are new
+native modules (both ship in Expo Go).
+
 ## Remaining work
 
 - **API integration** — replace `src/mocks` with real endpoints (see below)
 - **Device services** (`src/services` documents the plan): camera/gallery
-  for KYC photos + expense receipts (expo-image-picker), document upload,
-  native date pickers to replace the validated YYYY-MM-DD text fields
+  for KYC photos + expense receipts (expo-image-picker), document upload;
+  the expense form still uses a typed date (DateField is ready to drop in)
 - **Invoice PDF preview** — mobile shows the computed totals preview; the
   A4 document render stays server-side (web parity would fetch the PDF)
 - **Admin surface** — the web's admin page (staff + property CRUD, account
