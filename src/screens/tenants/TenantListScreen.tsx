@@ -1,23 +1,34 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, View, FlatList, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
 
-import { EmptyState } from '@/components/EmptyState';
-import { ErrorState } from '@/components/ErrorState';
-import { FilterChips } from '@/components/FilterChips';
-import { Icon } from '@/components/Icon';
-import { Screen } from '@/components/Screen';
-import { SearchBar } from '@/components/SearchBar';
-import { SkeletonCardList } from '@/components/Skeleton';
-import { Typography } from '@/components/Typography';
+import {
+  EmptyState,
+  ErrorState,
+  FilterChips,
+  GroupedItem,
+  Icon,
+  LargeTitle,
+  Screen,
+  SearchBar,
+  SegmentedControl,
+  SkeletonCardList,
+  TopBar,
+  Typography,
+  useScrollHeader,
+} from '@/components';
 import { TenantCard } from '@/components/cards/TenantCard';
-import { enterItem } from '@/components/motion';
 import { useTenants } from '@/hooks';
 import type { TenantListItem } from '@/mocks';
 import { useActiveProperty } from '@/store';
-import { colors, spacing } from '@/theme';
-import { TabHeader } from '@/screens/shared/TabHeader';
+import { borderRadius, colors, spacing, GUTTER } from '@/theme';
+import {
+  PAYMENT_FILTER_OPTIONS,
+  matchesPaymentFilter,
+  type PaymentFilter,
+} from '@/utils';
+import { haptics } from '@/utils/haptics';
 
 type StatusFilter = 'ALL' | 'CURRENT' | 'PAST';
 type SortMode = 'name' | 'recent';
@@ -25,113 +36,159 @@ type SortMode = 'name' | 'recent';
 /**
  * TenantListScreen
  *
- * The web tenants table as a touch list: search by name/phone, the same
- * All / Current / Past filter and Name / Recently added sort, tap-through
- * to the profile. (CSV export stays a desktop affordance.)
+ * The web tenants table as a grouped list: search by name/phone, All /
+ * Current / Past, the shared payment filter (Unpaid, Partially paid, Fully
+ * paid, Overdue — this month, from the ledger) and Name / Recent sort.
  */
 export function TenantListScreen() {
   const router = useRouter();
   const property = useActiveProperty();
+  const { scrollY, onScroll } = useScrollHeader();
   const { data: tenantsData, isLoading, error, refetch, isRefreshing, refresh } =
     useTenants(property.id);
   const tenants = useMemo(() => tenantsData ?? [], [tenantsData]);
 
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<StatusFilter>('ALL');
+  const [status, setStatus] = useState<StatusFilter>('ALL');
+  const [payment, setPayment] = useState<PaymentFilter>('ALL');
   const [sort, setSort] = useState<SortMode>('name');
+
+  const paymentCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        PAYMENT_FILTER_OPTIONS.map((o) => [
+          o.value,
+          tenants.filter(
+            (t) =>
+              o.value === 'ALL' ||
+              (t.active &&
+                matchesPaymentFilter(o.value, { state: t.active.state, status: t.active.paymentStatus })),
+          ).length,
+        ]),
+      ) as Record<PaymentFilter, number>,
+    [tenants],
+  );
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     const list = tenants.filter((t) => {
-      if (filter === 'CURRENT' && !t.active) return false;
-      if (filter === 'PAST' && t.active) return false;
+      if (status === 'CURRENT' && !t.active) return false;
+      if (status === 'PAST' && t.active) return false;
+      // A payment filter only makes sense for someone with rent due now.
+      if (
+        payment !== 'ALL' &&
+        (!t.active ||
+          !matchesPaymentFilter(payment, { state: t.active.state, status: t.active.paymentStatus }))
+      ) {
+        return false;
+      }
       if (query && !`${t.fullName} ${t.phone}`.toLowerCase().includes(query)) return false;
       return true;
     });
     return [...list].sort((a, b) =>
-      sort === 'recent'
-        ? b.createdAt.localeCompare(a.createdAt)
-        : a.fullName.localeCompare(b.fullName),
+      sort === 'recent' ? b.createdAt.localeCompare(a.createdAt) : a.fullName.localeCompare(b.fullName),
     );
-  }, [tenants, filter, search, sort]);
+  }, [tenants, status, payment, search, sort]);
 
   const currentCount = tenants.filter((t) => t.active).length;
   const pastCount = tenants.length - currentCount;
 
   const renderItem = useCallback(
     ({ item, index }: { item: TenantListItem; index: number }) => (
-      <Animated.View entering={enterItem(index)}>
+      <GroupedItem index={index} count={filtered.length} dividerInset={spacing.md + 40 + spacing.sm + 4}>
         <TenantCard
           tenant={item}
           isFlat={property.isFlat}
-          onPress={() => router.push(`/(main)/tenants/${item.id}` as any)}
+          onPress={() => router.push(`/(main)/tenants/${item.id}` as never)}
         />
-      </Animated.View>
+      </GroupedItem>
     ),
-    [property.isFlat, router],
+    [filtered.length, property.isFlat, router],
   );
 
-  return (
-    <Screen edges={['top']} padded={false}>
-      <TabHeader title="Tenants" />
-      <View style={styles.header}>
-        <SearchBar
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search name or phone"
-        />
-        <View style={styles.filterRow}>
-          <FilterChips
-            value={filter}
-            onChange={setFilter}
-            style={styles.filters}
-            options={[
-              { value: 'ALL', label: 'All tenants', count: tenants.length },
-              { value: 'CURRENT', label: 'Current', count: currentCount },
-              { value: 'PAST', label: 'Past', count: pastCount },
-            ]}
-          />
+  const header = (
+    <View style={styles.header}>
+      <LargeTitle
+        title="Tenants"
+        subtitle={`${currentCount} current · ${pastCount} past`}
+        scrollY={scrollY}
+        right={
           <Pressable
-            onPress={() => setSort((s) => (s === 'name' ? 'recent' : 'name'))}
-            style={({ pressed }) => [styles.sortButton, pressed && styles.sortPressed]}
+            onPress={() => {
+              haptics.selection();
+              setSort((s) => (s === 'name' ? 'recent' : 'name'));
+            }}
+            style={({ pressed }) => [styles.sort, pressed && styles.sortPressed]}
             accessibilityRole="button"
-            accessibilityLabel={`Sort by ${sort === 'name' ? 'name' : 'recently added'}, tap to change`}
+            accessibilityLabel={`Sorted by ${sort === 'name' ? 'name' : 'recently added'}, tap to change`}
           >
             <Icon
               name={sort === 'name' ? 'sort-alphabetical-ascending' : 'sort-clock-descending-outline'}
-              size={15}
-              color={colors.textSecondary}
+              size={16}
+              color={colors.text}
             />
-            <Typography variant="small" color="textSecondary">
-              {sort === 'name' ? 'Name' : 'Recent'}
-            </Typography>
+            <Typography variant="smallMedium">{sort === 'name' ? 'Name' : 'Recent'}</Typography>
           </Pressable>
-        </View>
-      </View>
+        }
+      />
+      <SearchBar value={search} onChangeText={setSearch} placeholder="Search name or phone" />
+      <SegmentedControl
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: 'ALL', label: `All · ${tenants.length}` },
+          { value: 'CURRENT', label: `Current · ${currentCount}` },
+          { value: 'PAST', label: `Past · ${pastCount}` },
+        ]}
+      />
+      <FilterChips
+        inset={GUTTER}
+        value={payment}
+        onChange={setPayment}
+        options={PAYMENT_FILTER_OPTIONS.map((o) => ({
+          value: o.value,
+          label: o.label,
+          count: o.value === 'ALL' ? undefined : paymentCounts[o.value],
+        }))}
+      />
+    </View>
+  );
 
+  return (
+    <Screen edges={['top']} padded={false} background={colors.canvas}>
+      <TopBar title="Tenants" scrollY={scrollY} />
       {isLoading ? (
-        <View style={styles.skeletons}>
+        <View style={styles.content}>
+          {header}
           <SkeletonCardList rows={7} />
         </View>
       ) : error && !tenantsData ? (
         <ErrorState message={error} onRetry={refetch} />
       ) : (
-        <FlatList
+        <Animated.FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
           renderItem={renderItem}
+          ListHeaderComponent={header}
+          contentContainerStyle={styles.content}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           onRefresh={refresh}
           refreshing={isRefreshing}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          initialNumToRender={14}
           ListEmptyComponent={
             <EmptyState
-              title={search ? 'No tenants match your filters' : 'No tenants found'}
+              title={
+                tenants.length === 0 ? 'No tenants found' : 'No tenants match your filters'
+              }
               icon="account-search-outline"
             />
           }
           ListFooterComponent={
             filtered.length > 0 ? (
-              <Typography variant="small" color="textTertiary" style={styles.footerCount}>
+              <Typography variant="small" color="textTertiary" style={styles.footer}>
                 {filtered.length} of {tenants.length} tenants
               </Typography>
             ) : null
@@ -143,44 +200,30 @@ export function TenantListScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingHorizontal: GUTTER,
+    paddingBottom: spacing.xxl,
+  },
   header: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
     gap: spacing.md,
+    paddingBottom: spacing.md,
   },
-  filterRow: {
+  sort: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-  },
-  filters: {
-    flex: 1,
-    paddingBottom: 0,
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    gap: 5,
     height: 32,
     paddingHorizontal: spacing.sm + 2,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   sortPressed: {
     backgroundColor: colors.surfacePressed,
   },
-  skeletons: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-  },
-  list: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.sm,
-  },
-  footerCount: {
+  footer: {
     textAlign: 'center',
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
   },
 });

@@ -1,66 +1,81 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import Animated from 'react-native-reanimated';
 
-import { Avatar } from '@/components/Avatar';
-import { Card } from '@/components/Card';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Divider } from '@/components/Divider';
-import { ListItem } from '@/components/ListItem';
-import { Screen } from '@/components/Screen';
-import { SectionHeader } from '@/components/SectionHeader';
-import { Skeleton } from '@/components/Skeleton';
-import { StatusBadge } from '@/components/StatusBadge';
-import { Typography } from '@/components/Typography';
-import { enterHeader, enterItem } from '@/components/motion';
-import { useAction, useTenantProfile } from '@/hooks';
-import { togglePaymentStatus, deleteTenant, sendRules } from '@/mocks/actions';
-import type { Payment } from '@/types';
-import { PAYMENT_STATUS_META } from '@/constants';
-import { useActiveProperty } from '@/store';
-import { colors, spacing, borderRadius } from '@/theme';
 import {
+  Avatar,
+  Button,
+  ConfirmDialog,
+  Icon,
+  KeyValue,
+  ListRow,
+  ProgressBar,
+  Screen,
+  SectionHeader,
+  Skeleton,
+  StatusBadge,
+  Surface,
+  Typography,
+  enterHeader,
+  enterItem,
+  toast,
+  type IconName,
+} from '@/components';
+import { COLLECTION_STATE_META, DEPOSIT_STATUS_META, PAYMENT_STATUS_META } from '@/constants';
+import { useAction, useTenantProfile } from '@/hooks';
+import { deleteTenant, sendRules } from '@/mocks';
+import { CollectRentSheet } from '@/screens/collections/CollectRentSheet';
+import { useActiveProperty } from '@/store';
+import { borderRadius, colors, spacing, GUTTER } from '@/theme';
+import type { Payment } from '@/types';
+import {
+  PAYMENT_METHOD_META,
   bedLocationLabel,
-  currentCycleDuePaise,
   formatDayMonth,
   formatFullDate,
   formatINR,
   formatMonthYear,
   ordinal,
+  rentDueDate,
   rentDueText,
+  startOfMonth,
 } from '@/utils';
 
 /**
  * TenantProfileScreen
  *
- * The web tenant profile page on mobile: identity header with the
- * Current/Past marker, quick actions (toggle cycle payment, send house
- * rules, delete), KYC & personal details, stay history with the active
- * stay's deposit/cycle/leaving facts, payment history with method and
- * recorder, and the KYC document.
+ * The web tenant profile on a phone: identity with the Current/Past marker,
+ * this month's collection position with Collect Rent (the web replaced the
+ * blunt paid/unpaid toggle with it), one-tap call / WhatsApp, KYC & personal
+ * details, stay history with deposit and rent-cycle facts, every receipt in
+ * the payment history, and the KYC document.
  */
 export function TenantProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const property = useActiveProperty();
-
-  const { data: profile, isLoading, refetch } = useTenantProfile(id);
-  const { busy: isToggling, run: runToggle } = useAction();
+  const { data: profile, isLoading } = useTenantProfile(id);
   const { busy: isDeleting, run: runDelete } = useAction();
   const { busy: isSendingRules, run: runSendRules } = useAction();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [collectOpen, setCollectOpen] = useState(false);
 
   if (isLoading || !profile) {
     return (
-      <Screen edges={['bottom']}>
+      <Screen edges={['bottom']} background={colors.canvas}>
         <View style={styles.skeletons}>
-          <Skeleton height={120} radius={16} />
-          <Skeleton height={160} radius={12} />
-          <Skeleton height={160} radius={12} />
+          <View style={styles.skeletonHead}>
+            <Skeleton width={64} height={64} radius={32} />
+            <View style={styles.flex}>
+              <Skeleton width="70%" height={22} />
+              <Skeleton width="45%" height={12} style={styles.skeletonGap} />
+            </View>
+          </View>
+          <Skeleton height={150} radius={borderRadius.lg} />
+          <Skeleton height={200} radius={borderRadius.lg} />
         </View>
       </Screen>
     );
@@ -68,31 +83,25 @@ export function TenantProfileScreen() {
 
   const { tenant, active, stays, payments } = profile;
   const isFlat = property.isFlat;
+  const phoneDigits = tenant.phone.replace(/\D/g, '');
 
   const handleDelete = async () => {
     const res = await runDelete(() => deleteTenant(tenant.id));
     setDeleteOpen(false);
-    if (res.ok) router.back();
-    else setFeedback(res.error);
+    if (res.ok) {
+      toast.success(`${tenant.fullName} deleted`);
+      router.back();
+    } else toast.error(res.error);
   };
 
   const handleSendRules = async () => {
     const res = await runSendRules(() => sendRules(tenant.id));
-    setFeedback(res.ok ? `House rules sent to ${res.data.tenantName} on WhatsApp.` : res.error);
-  };
-
-  const handleTogglePayment = async () => {
-    if (!active) return;
-    const res = await runToggle(() => togglePaymentStatus(active.id));
-    if (res.ok) {
-      setFeedback(null);
-      refetch();
-    } else {
-      setFeedback(res.error);
-    }
+    if (res.ok) toast.success('House rules sent', { description: `Sent to ${res.data.tenantName} on WhatsApp.` });
+    else toast.error(res.error);
   };
 
   const kycRows: { label: string; value: string | null }[] = [
+    { label: 'Email', value: tenant.email },
     { label: "Father's name", value: tenant.fatherName },
     { label: "Mother's name", value: tenant.motherName },
     { label: 'Emergency contact', value: tenant.emergencyContact },
@@ -105,187 +114,147 @@ export function TenantProfileScreen() {
     { label: 'Notes', value: tenant.notes },
   ].filter((row) => Boolean(row.value));
 
+  const collectedPct =
+    active && active.duePaise > 0 ? Math.round((active.collectedPaise / active.duePaise) * 100) : 100;
+
   return (
-    <Screen edges={['bottom']} scrollable>
-      {/* Identity header */}
-      <Animated.View entering={enterHeader()} style={styles.header}>
-        <Avatar name={tenant.fullName} uri={tenant.photoUrl} size="xl" />
-        <View style={styles.nameRow}>
-          <Typography variant="h2">{tenant.fullName}</Typography>
-          {active ? (
-            <View style={styles.currentTag}>
-              <View style={styles.currentDot} />
-              <Typography variant="small">Current</Typography>
+    <Screen edges={['bottom']} padded={false} background={colors.canvas}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Identity */}
+        <Animated.View entering={enterHeader()} style={styles.identity}>
+          <Avatar name={tenant.fullName} uri={null} size="xl" />
+          <View style={styles.identityText}>
+            <Typography variant="h1" numberOfLines={2}>
+              {tenant.fullName}
+            </Typography>
+            <View style={styles.markerRow}>
+              {active ? (
+                <StatusBadge meta={{ label: 'Current', color: colors.success, softColor: colors.successLight }} size="sm" />
+              ) : (
+                <StatusBadge meta={{ label: 'Past', color: colors.neutral, softColor: colors.neutralLight }} size="sm" />
+              )}
+              <Typography variant="small" color="textSecondary" numberOfLines={1}>
+                {active
+                  ? `${bedLocationLabel(active.roomNumber, active.bedLabel, isFlat)} · ${formatINR(active.monthlyRent)}/mo`
+                  : tenant.phone}
+              </Typography>
             </View>
-          ) : (
-            <Typography variant="small" color="textTertiary">
-              Past
-            </Typography>
-          )}
-        </View>
-        <Typography variant="caption" color="textSecondary">
-          {tenant.phone}
-          {tenant.email ? ` · ${tenant.email}` : ''}
-        </Typography>
-        {active && (
-          <Typography variant="caption" color="textSecondary">
-            {bedLocationLabel(active.roomNumber, active.bedLabel, isFlat)} ·{' '}
-            {formatINR(active.monthlyRent)}/mo
-          </Typography>
-        )}
-      </Animated.View>
+          </View>
+        </Animated.View>
 
-      {feedback && (
-        <View style={styles.feedback}>
-          <Typography variant="caption" color="textSecondary" style={styles.feedbackText}>
-            {feedback}
-          </Typography>
-        </View>
-      )}
-
-      {/* Actions */}
-      <Animated.View entering={enterItem(0)} style={styles.section}>
-        <SectionHeader title="Actions" />
-        <Card flat noPadding>
-          {active && (
-            <>
-              <ListItem
-                title={
-                  active.paymentStatus === 'PAID'
-                    ? 'Mark rent unpaid'
-                    : `Mark rent paid — ${formatINR(currentCycleDuePaise(active))}`
-                }
-                icon="currency-inr"
-                onPress={handleTogglePayment}
-                disabled={isToggling}
-              />
-              <Divider style={styles.zeroDivider} />
-            </>
-          )}
-          <ListItem
-            title="Send house rules"
+        <Animated.View entering={enterItem(0)} style={styles.quick}>
+          <QuickAction icon="phone-outline" label="Call" onPress={() => Linking.openURL(`tel:${phoneDigits}`)} />
+          <QuickAction
+            icon="whatsapp"
+            label="WhatsApp"
+            onPress={() => Linking.openURL(`https://wa.me/91${phoneDigits.slice(-10)}`)}
+          />
+          <QuickAction
             icon="file-document-outline"
-            onPress={handleSendRules}
+            label="House rules"
             disabled={isSendingRules}
+            onPress={handleSendRules}
           />
-          <Divider style={styles.zeroDivider} />
-          <ListItem
-            title="Delete tenant"
-            icon="delete-outline"
-            destructive
-            onPress={() => setDeleteOpen(true)}
-            disabled={isDeleting}
-          />
-        </Card>
-      </Animated.View>
+        </Animated.View>
 
-      {/* KYC & personal details */}
-      <Animated.View entering={enterItem(1)} style={styles.section}>
-        <SectionHeader title="KYC & personal details" />
-        <Card flat>
-          {kycRows.length === 0 ? (
-            <Typography variant="caption" color="textSecondary">
-              No additional KYC details captured yet.
-            </Typography>
-          ) : (
-            kycRows.map((row, index) => (
-              <View key={row.label}>
-                {index > 0 && <Divider style={styles.zeroDivider} />}
-                <View style={styles.infoRow}>
+        {/* This month */}
+        {active && (
+          <Animated.View entering={enterItem(1)}>
+            <SectionHeader title={`Rent · ${formatMonthYear(new Date())}`} meta={rentDueText(active.state, active.paymentDueDay)} />
+            <Surface padded style={styles.month}>
+              <View style={styles.monthTop}>
+                <Typography variant="h2" style={styles.tabular}>
+                  {formatINR(active.collectedPaise)}{' '}
                   <Typography variant="caption" color="textSecondary">
-                    {row.label}
+                    of {formatINR(active.duePaise)} collected
                   </Typography>
-                  <Typography variant="captionMedium" style={styles.infoValue}>
-                    {row.value}
-                  </Typography>
+                </Typography>
+                <View style={styles.badges}>
+                  <StatusBadge meta={COLLECTION_STATE_META[active.state]} size="sm" />
+                  {active.paymentStatus === 'OVERDUE' && (
+                    <StatusBadge meta={PAYMENT_STATUS_META.OVERDUE} size="sm" tinted />
+                  )}
                 </View>
               </View>
-            ))
-          )}
-        </Card>
-      </Animated.View>
+              <ProgressBar
+                pct={collectedPct}
+                color={active.state === 'PAID' ? colors.success : colors.chart1}
+              />
+              <Button title="Collect rent" icon="cash-plus" onPress={() => setCollectOpen(true)} />
+            </Surface>
+          </Animated.View>
+        )}
 
-      {/* Stay history */}
-      <Animated.View entering={enterItem(2)} style={styles.section}>
-        <SectionHeader title="Stay history" />
-        <Card flat>
-          {stays.length === 0 ? (
-            <Typography variant="caption" color="textSecondary">
-              No stays recorded.
-            </Typography>
-          ) : (
-            <>
-              {stays.map((stay, index) => (
-                <View key={stay.id}>
-                  {index > 0 && <Divider verticalSpacing="sm" />}
-                  <View style={styles.row}>
-                    <View style={styles.rowText}>
-                      <Typography variant="captionMedium">
-                        {bedLocationLabel(stay.roomNumber, stay.bedLabel, isFlat)}
-                      </Typography>
-                      <Typography variant="small" color="textTertiary">
-                        {formatFullDate(stay.checkInDate)} –{' '}
-                        {stay.checkOutDate ? formatFullDate(stay.checkOutDate) : 'Present'}
-                      </Typography>
+        {/* Stay history */}
+        <Animated.View entering={enterItem(2)}>
+          <SectionHeader title="Stay history" meta={`${stays.length} ${stays.length === 1 ? 'stay' : 'stays'}`} />
+          <Surface>
+            {stays.length === 0 ? (
+              <Typography variant="caption" color="textSecondary" style={styles.empty}>
+                No stays recorded.
+              </Typography>
+            ) : (
+              stays.map((stay, index) => (
+                <ListRow
+                  key={stay.id}
+                  divider={index > 0}
+                  icon={stay.status === 'ACTIVE' ? 'bed-outline' : 'history'}
+                  title={bedLocationLabel(stay.roomNumber, stay.bedLabel, isFlat)}
+                  subtitle={`${formatFullDate(stay.checkInDate)} – ${stay.checkOutDate ? formatFullDate(stay.checkOutDate) : 'Present'}`}
+                  trailing={
+                    <View style={styles.trailing}>
+                      <Typography variant="numberSmall">{formatINR(stay.monthlyRent)}</Typography>
+                      {stay.status === 'ACTIVE' ? (
+                        <Typography variant="small" color="textTertiary">
+                          Active
+                        </Typography>
+                      ) : (
+                        <StatusBadge meta={DEPOSIT_STATUS_META[stay.depositStatus]} size="sm" />
+                      )}
                     </View>
-                    <View style={styles.rowRight}>
-                      <Typography variant="captionMedium">
-                        {formatINR(stay.monthlyRent)}
-                      </Typography>
-                      <Typography variant="small" color="textTertiary">
-                        {stay.status === 'ACTIVE' ? 'Active' : 'Ended'}
-                      </Typography>
-                    </View>
-                  </View>
-                </View>
-              ))}
-              {active && (
-                <>
-                  <Divider verticalSpacing="sm" />
-                  <View style={styles.stayFacts}>
-                    <Typography variant="small" color="textSecondary">
-                      Deposit:{' '}
-                      {active.securityDeposit ? formatINR(active.securityDeposit) : 'Not set'}
-                    </Typography>
-                    <Typography variant="small" color="textSecondary">
-                      Rent cycle: {ordinal(active.paymentDueDay || 5)} of month ·{' '}
-                      {rentDueText(active.paymentStatus, active.paymentDueDay)}
-                    </Typography>
-                    <Typography variant="small" color="textSecondary">
-                      Leaving:{' '}
-                      {active.expectedLeavingDate
-                        ? formatFullDate(active.expectedLeavingDate)
-                        : 'Not set'}
-                    </Typography>
-                  </View>
-                </>
-              )}
-            </>
-          )}
-        </Card>
-      </Animated.View>
+                  }
+                />
+              ))
+            )}
+            {active && (
+              <View style={styles.facts}>
+                <KeyValue
+                  label="Deposit"
+                  value={active.securityDeposit ? formatINR(active.securityDeposit) : 'Not set'}
+                />
+                <KeyValue
+                  label="Rent cycle"
+                  value={`${ordinal(rentDueDate(active.paymentDueDay, startOfMonth(new Date())).getDate())} of month`}
+                  divider
+                />
+                {active.maintenanceCharge > 0 && (
+                  <KeyValue label="Maintenance" value={`${formatINR(active.maintenanceCharge)}/mo`} divider />
+                )}
+                <KeyValue
+                  label="Leaving"
+                  value={active.expectedLeavingDate ? formatFullDate(active.expectedLeavingDate) : 'Not set'}
+                  divider
+                />
+              </View>
+            )}
+          </Surface>
+        </Animated.View>
 
-      {/* Payment history */}
-      <Animated.View entering={enterItem(3)} style={styles.section}>
-        <SectionHeader title="Payment history" />
-        <Card flat>
-          {payments.length === 0 ? (
-            <Typography variant="caption" color="textSecondary">
-              No payments recorded.
-            </Typography>
-          ) : (
-            payments.map((payment, index) => (
-              <View key={payment.id}>
-                {index > 0 && <Divider verticalSpacing="sm" />}
-                <View style={styles.row}>
-                  <View style={styles.rowText}>
-                    <Typography variant="captionMedium">
-                      {formatMonthYear(payment.forMonth)}
-                    </Typography>
-                    <Typography variant="small" color="textTertiary">
-                      {payment.paidAt
-                        ? `Paid ${formatDayMonth(payment.paidAt)} by ${paymentMethodLabel(payment)}`
-                        : 'Not paid'}
+        {/* Payment history */}
+        <Animated.View entering={enterItem(3)}>
+          <SectionHeader title="Payment history" meta={payments.length ? `${payments.length} receipts` : undefined} />
+          <Surface>
+            {payments.length === 0 ? (
+              <Typography variant="caption" color="textSecondary" style={styles.empty}>
+                No payments recorded.
+              </Typography>
+            ) : (
+              payments.map((payment, index) => (
+                <View key={payment.id} style={[styles.payment, index > 0 && styles.hairlineTop]}>
+                  <View style={styles.flex}>
+                    <Typography variant="bodyMedium">{formatMonthYear(payment.forMonth)}</Typography>
+                    <Typography variant="small" color="textSecondary">
+                      {payment.paidAt ? `Paid ${formatDayMonth(payment.paidAt)} · ${methodLabel(payment)}` : 'Not paid'}
                     </Typography>
                     {payment.recordedByName && (
                       <Typography variant="small" color="textTertiary">
@@ -293,37 +262,61 @@ export function TenantProfileScreen() {
                       </Typography>
                     )}
                   </View>
-                  <View style={styles.rowRight}>
-                    <Typography variant="captionMedium">
-                      {formatINR(payment.amount)}
-                    </Typography>
-                    <StatusBadge meta={PAYMENT_STATUS_META[payment.status]} size="sm" />
-                  </View>
+                  <Typography variant="number">{formatINR(payment.amount)}</Typography>
                 </View>
-              </View>
-            ))
-          )}
-        </Card>
-      </Animated.View>
+              ))
+            )}
+          </Surface>
+        </Animated.View>
 
-      {/* KYC document */}
-      <Animated.View entering={enterItem(4)} style={styles.section}>
-        <SectionHeader title="KYC document" />
-        <Card flat>
-          {tenant.photoUrl ? (
-            <Image
-              source={{ uri: tenant.photoUrl }}
-              style={styles.kycImage}
-              contentFit="contain"
-              accessibilityLabel="KYC document"
+        {/* KYC */}
+        <Animated.View entering={enterItem(4)}>
+          <SectionHeader title="KYC & personal details" />
+          <Surface padded>
+            <KeyValue label="Phone" value={tenant.phone} />
+            {kycRows.map((row) => (
+              <KeyValue key={row.label} label={row.label} value={row.value as string} divider />
+            ))}
+            {tenant.photoUrl && /^(https?|file):/.test(tenant.photoUrl) ? (
+              <Image
+                source={{ uri: tenant.photoUrl }}
+                style={styles.kycImage}
+                contentFit="contain"
+                accessibilityLabel="KYC document"
+              />
+            ) : tenant.photoUrl ? (
+              <View style={styles.kycFile}>
+                <Icon name="card-account-details-outline" size={18} color={colors.success} />
+                <Typography variant="small" color="textSecondary">
+                  KYC photo on file — opens from the web app.
+                </Typography>
+              </View>
+            ) : (
+              <Typography variant="small" color="textTertiary" style={styles.kycNote}>
+                No KYC document uploaded yet.
+              </Typography>
+            )}
+          </Surface>
+        </Animated.View>
+
+        <Animated.View entering={enterItem(5)}>
+          <Surface>
+            <ListRow
+              icon="delete-outline"
+              title="Delete tenant"
+              subtitle="Removes the tenant and their stay history"
+              destructive
+              hideChevron
+              onPress={() => setDeleteOpen(true)}
+              disabled={isDeleting}
             />
-          ) : (
-            <Typography variant="caption" color="textSecondary">
-              No KYC document uploaded yet.
-            </Typography>
-          )}
-        </Card>
-      </Animated.View>
+          </Surface>
+        </Animated.View>
+      </ScrollView>
+
+      {active && (
+        <CollectRentSheet visible={collectOpen} tenancyId={active.id} onClose={() => setCollectOpen(false)} />
+      )}
 
       <ConfirmDialog
         visible={deleteOpen}
@@ -339,88 +332,155 @@ export function TenantProfileScreen() {
   );
 }
 
-function paymentMethodLabel(payment: Payment): string {
+function QuickAction({
+  icon,
+  label,
+  onPress,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.quickItem, pressed && styles.quickPressed, disabled && styles.disabled]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Icon name={icon} size={20} color={colors.text} />
+      <Typography variant="smallMedium">{label}</Typography>
+    </Pressable>
+  );
+}
+
+function methodLabel(payment: Payment): string {
   if (payment.method === 'SPLIT') {
-    const cash = payment.cashAmount ? formatINR(payment.cashAmount) : '₹0';
-    const online = payment.onlineAmount ? formatINR(payment.onlineAmount) : '₹0';
-    return `split (cash ${cash}, online ${online})`;
+    return `${formatINR(payment.cashAmount ?? 0)} cash + ${formatINR(payment.onlineAmount ?? 0)} online`;
   }
-  return payment.method.toLowerCase();
+  return PAYMENT_METHOD_META[payment.method].label;
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingHorizontal: GUTTER,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+    gap: spacing.lg,
+  },
+  flex: {
+    flex: 1,
+  },
   skeletons: {
     gap: spacing.md,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
   },
-  header: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.lg,
-  },
-  nameRow: {
+  skeletonHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  skeletonGap: {
     marginTop: spacing.sm,
   },
-  currentTag: {
+  identity: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  currentDot: {
-    width: 6,
-    height: 6,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.success,
-  },
-  feedback: {
-    marginBottom: spacing.md,
-    padding: spacing.sm + 4,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surface,
-  },
-  feedbackText: {
-    textAlign: 'center',
-  },
-  section: {
-    marginBottom: spacing.lg,
-  },
-  zeroDivider: {
-    marginVertical: 0,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: spacing.md,
-    paddingVertical: spacing.sm,
   },
-  infoValue: {
+  identityText: {
     flex: 1,
-    textAlign: 'right',
+    gap: 6,
   },
-  row: {
+  markerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm + 2,
+  },
+  quick: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: -spacing.sm,
+  },
+  quickItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.sm + 4,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  quickPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  month: {
     gap: spacing.md,
   },
-  rowText: {
-    flex: 1,
-    gap: 2,
+  monthTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  rowRight: {
+  badges: {
     alignItems: 'flex-end',
     gap: 4,
   },
-  stayFacts: {
+  tabular: {
+    flexShrink: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  trailing: {
+    alignItems: 'flex-end',
     gap: 3,
+  },
+  facts: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+    backgroundColor: colors.canvas,
+  },
+  payment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+  },
+  hairlineTop: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  empty: {
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
   },
   kycImage: {
     width: '100%',
     aspectRatio: 16 / 10,
+    marginTop: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
+  },
+  kycNote: {
+    marginTop: spacing.sm,
+  },
+  kycFile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm + 4,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.canvas,
   },
 });
