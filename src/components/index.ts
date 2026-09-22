@@ -26,6 +26,30 @@ export type { DividerProps } from './Divider';
 export { SectionHeader } from './SectionHeader';
 export type { SectionHeaderProps } from './SectionHeader';
 
+export { Surface } from './Surface';
+export type { SurfaceProps } from './Surface';
+
+export { ListRow } from './ListRow';
+export type { ListRowProps } from './ListRow';
+
+export { KeyValue } from './KeyValue';
+export type { KeyValueProps } from './KeyValue';
+
+export { StatGrid, StatCell } from './StatGrid';
+export type { StatGridProps, StatCellProps } from './StatGrid';
+
+export { ProgressBar } from './ProgressBar';
+export type { ProgressBarProps } from './ProgressBar';
+
+export { CheckboxRow } from './Checkbox';
+export type { CheckboxRowProps } from './Checkbox';
+
+export { BarChart, OccupancyBars, LegendItem } from './Charts';
+export type { BarChartProps, BarDatum, BarSeries, StackRow } from './Charts';
+
+export { TopBar, LargeTitle, useScrollHeader } from './ScreenHeader';
+export type { TopBarProps, LargeTitleProps } from './ScreenHeader';
+
 // Identity & status
 export { Avatar } from './Avatar';
 export type { AvatarProps, AvatarSize } from './Avatar';
@@ -46,12 +70,13 @@ export type { SegmentedControlProps, SegmentOption } from './SegmentedControl';
 export { PropertySelector } from './PropertySelector';
 export type { PropertySelectorProps } from './PropertySelector';
 
+export { MonthPicker } from './MonthPicker';
+export type { MonthPickerProps, MonthOption } from './MonthPicker';
+
 // Lists & stats
 export { ListItem } from './ListItem';
 export type { ListItemProps } from './ListItem';
 
-export { StatCard } from './StatCard';
-export type { StatCardProps } from './StatCard';
 
 // Feedback
 export { EmptyState } from './EmptyState';
@@ -70,6 +95,11 @@ export type { FABProps } from './FAB';
 export { BottomSheet } from './BottomSheet';
 export type { BottomSheetProps } from './BottomSheet';
 
+export { ActionSheet } from './ActionSheet';
+export type { ActionSheetProps, ActionSheetAction } from './ActionSheet';
+
+export { toast, ToastHost } from './Toast';
+
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 
@@ -87,3 +117,8 @@ export {
 
 // Domain cards
 export * from './cards';
+export { DateField } from './DateField';
+export type { DateFieldProps } from './DateField';
+
+export { GroupedItem } from './GroupedItem';
+export type { GroupedItemProps } from './GroupedItem';

@@ -5,6 +5,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
+import { haptics } from '@/utils/haptics';
 import type { Property } from '@/types';
 
 export interface PropertySelectorProps {
@@ -32,14 +33,20 @@ export function PropertySelector({ properties, selectedId, onSelect }: PropertyS
   return (
     <>
       <Pressable
-        onPress={() => canSwitch && setOpen(true)}
+        onPress={() => {
+          if (!canSwitch) return;
+          haptics.tap();
+          setOpen(true);
+        }}
         disabled={!canSwitch}
         style={({ pressed }) => [styles.trigger, pressed && styles.triggerPressed]}
         accessibilityRole="button"
         accessibilityLabel="Switch property"
       >
-        <Icon name="home-city-outline" size={18} color={colors.primary} />
-        <Typography variant="captionMedium" numberOfLines={1} style={styles.triggerLabel}>
+        <View style={styles.triggerIcon}>
+          <Icon name="home-city-outline" size={15} color={colors.textInverse} />
+        </View>
+        <Typography variant="bodySemibold" numberOfLines={1} style={styles.triggerLabel}>
           {selected?.name ?? 'Select property'}
         </Typography>
         {canSwitch && <Icon name="chevron-down" size={18} color={colors.textSecondary} />}
@@ -88,15 +95,24 @@ const styles = StyleSheet.create({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm - 2,
-    height: 38,
-    paddingHorizontal: spacing.sm + 4,
+    alignSelf: 'flex-start',
+    gap: spacing.sm,
+    height: 40,
+    paddingLeft: 4,
+    paddingRight: spacing.sm + 2,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.primaryLight,
-    maxWidth: 230,
+    maxWidth: 260,
   },
   triggerPressed: {
-    opacity: 0.8,
+    backgroundColor: colors.surfacePressed,
+  },
+  triggerIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
   },
   triggerLabel: {
     flexShrink: 1,
@@ -110,12 +126,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   optionSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.canvas,
   },
   optionPressed: {
     backgroundColor: colors.surfacePressed,

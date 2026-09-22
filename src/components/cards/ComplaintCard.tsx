@@ -5,7 +5,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Typography } from '@/components/Typography';
 import { COMPLAINT_PRIORITY_META, COMPLAINT_STATUS_META } from '@/constants';
 import type { ComplaintListItem } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
+import { colors, spacing} from '@/theme';
 import { formatDayMonth } from '@/utils';
 
 export interface ComplaintCardProps {
@@ -61,15 +61,13 @@ export function ComplaintCard({ complaint, onPress }: ComplaintCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 6,
     gap: spacing.sm - 2,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
     backgroundColor: colors.background,
   },
   pressed: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
   },
   titleRow: {
     flexDirection: 'row',

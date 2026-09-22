@@ -10,9 +10,6 @@ export type { TenantCardProps } from './TenantCard';
 export { ComplaintCard } from './ComplaintCard';
 export type { ComplaintCardProps } from './ComplaintCard';
 
-export { CollectionCard } from './CollectionCard';
-export type { CollectionCardProps } from './CollectionCard';
-
 export { ExpenseCard, expenseCategoryIcon } from './ExpenseCard';
 export type { ExpenseCardProps } from './ExpenseCard';
 

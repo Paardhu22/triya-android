@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   type TextInputProps as RNTextInputProps,
+  Platform,
 } from 'react-native';
 
 import { Typography } from '@/components/Typography';
@@ -17,6 +18,8 @@ export interface TextInputProps extends RNTextInputProps {
   error?: string;
   /** Hint text displayed below the input when there is no error. */
   hint?: string;
+  /** Leading adornment, e.g. "₹" on money fields. */
+  prefix?: string;
 }
 
 /**
@@ -38,6 +41,7 @@ export function TextInput({
   label,
   error,
   hint,
+  prefix,
   secureTextEntry,
   style,
   ...rest
@@ -58,7 +62,7 @@ export function TextInput({
     <View style={styles.wrapper}>
       {label && (
         <Typography
-          variant="captionMedium"
+          variant="smallMedium"
           color="textSecondary"
           style={styles.label}
         >
@@ -67,9 +71,15 @@ export function TextInput({
       )}
 
       <View style={inputContainerStyles}>
+        {prefix ? (
+          <Typography variant="body" color="textSecondary" style={styles.prefix}>
+            {prefix}
+          </Typography>
+        ) : null}
         <RNTextInput
           style={[styles.input, style]}
           placeholderTextColor={colors.textTertiary}
+          selectionColor={colors.primary}
           secureTextEntry={effectiveSecure}
           onFocus={(e) => {
             setIsFocused(true);
@@ -111,12 +121,19 @@ export function TextInput({
   );
 }
 
+// The browser focus ring doubles the field's own focus border on web.
+const webNoOutline = Platform.OS === 'web' ? ({ outlineWidth: 0 } as object) : {};
+
 const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
   },
   label: {
-    marginBottom: spacing.xs,
+    marginBottom: 6,
+  },
+  prefix: {
+    paddingLeft: spacing.md - 2,
+    marginRight: -spacing.sm,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -135,9 +152,10 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: 48,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.md - 2,
     ...typography.body,
     color: colors.text,
+    ...webNoOutline,
   },
   toggleButton: {
     paddingHorizontal: spacing.md,

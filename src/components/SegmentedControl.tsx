@@ -1,13 +1,22 @@
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   View,
   StyleSheet,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Typography } from '@/components/Typography';
-import { colors, spacing, borderRadius } from '@/theme';
+import { colors, spacing, borderRadius, elevation } from '@/theme';
+import { haptics } from '@/utils/haptics';
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -21,19 +30,14 @@ export interface SegmentedControlProps<T extends string> {
   style?: StyleProp<ViewStyle>;
 }
 
+const PAD = 3;
+
 /**
  * SegmentedControl component.
  *
- * Equal-width boxed segments for compact, mutually exclusive choices
- * (2–4 options), e.g. payment method or complaint priority in forms.
- * For screen-level sections use `Tabs` instead.
- *
- * @example
- * <SegmentedControl
- *   options={[{ value: 'CASH', label: 'Cash' }, { value: 'ONLINE', label: 'Online' }]}
- *   value={method}
- *   onChange={setMethod}
- * />
+ * Equal-width segments on a warm track with a white thumb that glides to the
+ * selection — the web's shadcn `TabsList`, made tactile. For 2–4 mutually
+ * exclusive choices (tabs within a screen, payment method…).
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -41,21 +45,44 @@ export function SegmentedControl<T extends string>({
   onChange,
   style,
 }: SegmentedControlProps<T>) {
+  const [width, setWidth] = useState(0);
+  const index = Math.max(0, options.findIndex((o) => o.value === value));
+  const segment = width > 0 ? (width - PAD * 2) / options.length : 0;
+  const x = useSharedValue(0);
+
+  useEffect(() => {
+    x.set(withTiming(index * segment, { duration: 240, easing: Easing.bezier(0.2, 0, 0, 1) }));
+  }, [index, segment, x]);
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.get() }],
+  }));
+
   return (
-    <View style={[styles.track, style]}>
+    <View
+      style={[styles.track, style]}
+      onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
+    >
+      {segment > 0 && <Animated.View style={[styles.thumb, { width: segment }, thumbStyle]} />}
       {options.map((option) => {
         const selected = option.value === value;
         return (
           <Pressable
             key={option.value}
-            onPress={() => onChange(option.value)}
-            style={[styles.segment, selected && styles.segmentSelected]}
-            accessibilityRole="button"
+            onPress={() => {
+              if (!selected) {
+                haptics.selection();
+                onChange(option.value);
+              }
+            }}
+            style={styles.segment}
+            accessibilityRole="tab"
             accessibilityState={{ selected }}
           >
             <Typography
-              variant="captionMedium"
+              variant={selected ? 'captionMedium' : 'caption'}
               colorValue={selected ? colors.text : colors.textSecondary}
+              numberOfLines={1}
             >
               {option.label}
             </Typography>
@@ -70,23 +97,23 @@ const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
     backgroundColor: colors.surfacePressed,
-    borderRadius: borderRadius.md + 2,
-    padding: 3,
+    borderRadius: borderRadius.md,
+    padding: PAD,
+  },
+  thumb: {
+    position: 'absolute',
+    top: PAD,
+    bottom: PAD,
+    left: PAD,
+    borderRadius: borderRadius.md - 2,
+    backgroundColor: colors.background,
+    ...elevation.xs,
   },
   segment: {
     flex: 1,
-    height: 36,
-    borderRadius: borderRadius.md,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
-  },
-  segmentSelected: {
-    backgroundColor: colors.background,
-    elevation: 1,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
   },
 });

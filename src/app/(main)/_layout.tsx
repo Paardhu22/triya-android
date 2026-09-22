@@ -23,17 +23,21 @@ export default function MainLayout() {
         screenOptions={{
           headerShown: true,
           headerShadowVisible: false,
-          headerTitleStyle: { fontFamily: fontFamilies.semibold, color: colors.text },
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.primary,
-          contentStyle: { backgroundColor: colors.background },
+          headerTitleStyle: { fontFamily: fontFamilies.semibold, color: colors.text, fontSize: 17 },
+          headerStyle: { backgroundColor: colors.canvas },
+          headerTintColor: colors.text,
+          headerBackButtonDisplayMode: 'minimal',
+          contentStyle: { backgroundColor: colors.canvas },
           animation: 'slide_from_right',
           animationDuration: 280,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="rooms/[id]" options={{ title: '' }} />
-        <Stack.Screen name="tenants/[id]" options={{ title: 'Tenant profile' }} />
+        <Stack.Screen name="tenants/[id]" options={{ title: '' }} />
+        <Stack.Screen name="reports" options={{ title: 'Reports' }} />
         <Stack.Screen name="complaints/index" options={{ title: 'Complaints' }} />
         <Stack.Screen name="complaints/[id]" options={{ title: 'Complaint' }} />
         <Stack.Screen name="expenses/index" options={{ title: 'Expense Tracker' }} />

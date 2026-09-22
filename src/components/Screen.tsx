@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '@/theme';
+import { colors, GUTTER } from '@/theme';
 
 export interface ScreenProps extends ViewProps {
   /** Wraps content in a ScrollView. Defaults to false. */
@@ -26,7 +26,7 @@ export interface ScreenProps extends ViewProps {
    * header already clears the status bar; tab screens typically pass ['top'].
    */
   edges?: Edge[];
-  /** Screen background color. Defaults to the app background (white). */
+  /** Screen background color. Defaults to the warm canvas. */
   background?: string;
 }
 
@@ -105,7 +105,7 @@ export function Screen({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   fill: {
     flex: 1,
@@ -114,6 +114,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   padded: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
   },
 });

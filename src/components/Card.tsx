@@ -50,26 +50,20 @@ export function Card({
   );
 }
 
+// Both variants now share the Surface look (white, hairline, soft radius) so
+// legacy call sites match the grouped-surface design; `flat` is kept for API
+// compatibility and drops the barely-visible lift.
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.background,
     borderRadius: borderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   padded: {
-    padding: spacing.lg,
+    padding: spacing.md,
   },
-  shadow: {
-    // Android elevation
-    elevation: 2,
-    // iOS shadow
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  flat: {
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+  shadow: {},
+  flat: {},
 });

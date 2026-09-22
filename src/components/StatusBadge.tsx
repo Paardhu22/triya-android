@@ -2,46 +2,39 @@ import { View, StyleSheet } from 'react-native';
 
 import { Typography } from '@/components/Typography';
 import type { StatusMeta } from '@/constants';
-import { borderRadius, spacing } from '@/theme';
+import { colors } from '@/theme';
 
 export interface StatusBadgeProps {
-  /** Status metadata from src/constants (label + tone colors). */
+  /** Status metadata from src/constants (label + tone). */
   meta: StatusMeta;
   /** Compact variant for dense rows. Defaults to 'md'. */
   size?: 'sm' | 'md';
+  /** Colour the label in the status tone (e.g. "Overdue" under a balance). */
+  tinted?: boolean;
 }
 
 /**
  * StatusBadge component.
  *
- * Pill with a solid status dot and label on a soft tinted background. Status
- * always carries a text label — the dot is reinforcement, never the sole
- * signal (accessibility rule inherited from the web app).
+ * The web's status treatment since the Swiss redesign: a small solid dot and
+ * the label in ink — no pill fill. Status always carries a text label; the
+ * dot is reinforcement, never the sole signal.
  *
  * @example
- * <StatusBadge meta={PAYMENT_STATUS_META[tenancy.paymentStatus]} />
- * <StatusBadge meta={COMPLAINT_PRIORITY_META.HIGH} size="sm" />
+ * <StatusBadge meta={COLLECTION_STATE_META[row.state]} />
+ * <StatusBadge meta={PAYMENT_STATUS_META.OVERDUE} tinted size="sm" />
  */
-export function StatusBadge({ meta, size = 'md' }: StatusBadgeProps) {
+export function StatusBadge({ meta, size = 'md', tinted = false }: StatusBadgeProps) {
   const isSmall = size === 'sm';
   return (
-    <View
-      style={[
-        styles.badge,
-        isSmall && styles.badgeSmall,
-        { backgroundColor: meta.softColor },
-      ]}
-    >
+    <View style={styles.badge}>
       <View
-        style={[
-          styles.dot,
-          isSmall && styles.dotSmall,
-          { backgroundColor: meta.color },
-        ]}
+        style={[styles.dot, isSmall && styles.dotSmall, { backgroundColor: meta.color }]}
       />
       <Typography
-        variant={isSmall ? 'small' : 'captionMedium'}
-        colorValue={meta.color}
+        variant={isSmall ? 'smallMedium' : 'captionMedium'}
+        colorValue={tinted ? meta.color : colors.text}
+        numberOfLines={1}
       >
         {meta.label}
       </Typography>
@@ -54,23 +47,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-  },
-  badgeSmall: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    gap: 5,
+    gap: 7,
   },
   dot: {
     width: 7,
     height: 7,
-    borderRadius: borderRadius.full,
+    borderRadius: 4,
   },
   dotSmall: {
     width: 6,
     height: 6,
+    borderRadius: 3,
   },
 });

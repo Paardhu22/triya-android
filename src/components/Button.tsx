@@ -4,8 +4,9 @@ import { Icon, type IconName } from '@/components/Icon';
 import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
+import { haptics } from '@/utils/haptics';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'outline';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends Omit<PressableProps, 'children'> {
@@ -31,16 +32,18 @@ export interface ButtonProps extends Omit<PressableProps, 'children'> {
 const HEIGHT: Record<ButtonSize, number> = {
   sm: 36,
   md: 48,
-  lg: 56,
+  lg: 52,
 };
 
 /**
  * Button component.
  *
- * Three variants:
- * - **primary** -- solid blue background, white text. Use for the main action.
- * - **secondary** -- light gray background, dark text. Use for secondary actions.
- * - **outline** -- transparent with border. Use for tertiary/cancel actions.
+ * Variants (the web's shadcn button set):
+ * - **primary** -- solid ink, white text. The main action.
+ * - **secondary** -- warm muted fill. Secondary actions.
+ * - **outline** -- white with a hairline border. Tertiary / cancel.
+ * - **ghost** -- no chrome. Inline actions.
+ * - **destructive** -- solid error red. Deletes and vacates.
  *
  * @example
  * <Button title="Sign In" onPress={handleSignIn} />
@@ -56,15 +59,15 @@ export function Button({
   disabled = false,
   textColor: textColorOverride,
   style,
+  onPressIn,
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
-  const textColor =
-    textColorOverride ?? (variant === 'primary' ? colors.textInverse : colors.text);
+  const solid = variant === 'primary' || variant === 'destructive';
+  const textColor = textColorOverride ?? (solid ? colors.textInverse : colors.text);
 
-  const spinnerColor =
-    variant === 'primary' ? colors.textInverse : (textColorOverride ?? colors.primary);
+  const spinnerColor = solid ? colors.textInverse : (textColorOverride ?? colors.primary);
 
   return (
     <PressableScale
@@ -74,10 +77,20 @@ export function Button({
         variant === 'primary' && styles.primary,
         variant === 'secondary' && styles.secondary,
         variant === 'outline' && styles.outline,
+        // An outline button on a non-standard surface (e.g. the ink backdrop)
+        // stays see-through so its override colour reads.
+        variant === 'outline' && textColorOverride !== undefined && styles.outlineClear,
+        variant === 'ghost' && styles.ghost,
+        variant === 'destructive' && styles.destructive,
+        size === 'sm' && styles.small,
         isDisabled && styles.disabled,
         style as import('react-native').ViewStyle,
       ]}
       disabled={isDisabled}
+      onPressIn={(e) => {
+        haptics.tap();
+        onPressIn?.(e);
+      }}
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       {...rest}
@@ -124,11 +137,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   outline: {
-    backgroundColor: 'transparent',
+    backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  outlineClear: {
+    backgroundColor: 'transparent',
+  },
+  ghost: {
+    backgroundColor: 'transparent',
+  },
+  destructive: {
+    backgroundColor: colors.error,
+  },
+  small: {
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md - 1,
+  },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
 });

@@ -4,9 +4,9 @@ import { Avatar } from '@/components/Avatar';
 import { Icon } from '@/components/Icon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Typography } from '@/components/Typography';
-import { PAYMENT_STATUS_META } from '@/constants';
+import { COLLECTION_STATE_META } from '@/constants';
 import type { TenantListItem } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { bedLocationShort, formatINR } from '@/utils';
 
 export interface TenantCardProps {
@@ -17,14 +17,9 @@ export interface TenantCardProps {
 }
 
 /**
- * TenantCard component.
- *
- * A tenant list row: avatar, name + occupation, location and rent for
- * current tenants, payment badge; past tenants render muted with a "Past"
- * marker. The card replaces the web's tenants table row.
- *
- * @example
- * <TenantCard tenant={item} isFlat={false} onPress={() => router.push(`/tenants/${item.id}`)} />
+ * TenantCard — one tenants-list row: avatar, name, unit and rent for current
+ * tenants, and this month's collection state (with Overdue beneath, web
+ * tenants table); past tenants read muted with a "Past" marker.
  */
 export function TenantCard({ tenant, isFlat, onPress }: TenantCardProps) {
   const active = tenant.active;
@@ -32,14 +27,15 @@ export function TenantCard({ tenant, isFlat, onPress }: TenantCardProps) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      android_ripple={{ color: colors.surfacePressed }}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={tenant.fullName}
     >
       <Avatar name={tenant.fullName} size="md" />
 
       <View style={styles.body}>
-        <Typography variant="bodyMedium" numberOfLines={1}>
+        <Typography variant="bodyMedium" numberOfLines={1} colorValue={active ? colors.text : colors.textSecondary}>
           {tenant.fullName}
         </Typography>
         <Typography variant="small" color="textSecondary" numberOfLines={1}>
@@ -51,7 +47,14 @@ export function TenantCard({ tenant, isFlat, onPress }: TenantCardProps) {
 
       <View style={styles.right}>
         {active ? (
-          <StatusBadge meta={PAYMENT_STATUS_META[active.paymentStatus]} size="sm" />
+          <>
+            <StatusBadge meta={COLLECTION_STATE_META[active.state]} size="sm" />
+            {active.paymentStatus === 'OVERDUE' && (
+              <Typography variant="smallMedium" colorValue={colors.error}>
+                Overdue
+              </Typography>
+            )}
+          </>
         ) : (
           <View style={styles.pastTag}>
             <Icon name="history" size={13} color={colors.textTertiary} />
@@ -60,34 +63,30 @@ export function TenantCard({ tenant, isFlat, onPress }: TenantCardProps) {
             </Typography>
           </View>
         )}
-        <Icon name="chevron-right" size={20} color={colors.textTertiary} />
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
     backgroundColor: colors.background,
   },
   pressed: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
   },
   body: {
     flex: 1,
     gap: 2,
   },
   right: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+    alignItems: 'flex-end',
+    gap: 3,
   },
   pastTag: {
     flexDirection: 'row',

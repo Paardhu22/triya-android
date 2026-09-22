@@ -1,9 +1,10 @@
-import { Pressable, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 
+import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import type { FloorRoom } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
+import { colors, spacing, borderRadius, elevation } from '@/theme';
 
 export interface RoomCardProps {
   room: FloorRoom;
@@ -15,29 +16,24 @@ export interface RoomCardProps {
 /**
  * RoomCard component.
  *
- * A tile in the Floor Manager grid: the room number with one status dot per
- * bed (paid / pending / overdue / vacant). Flat properties show a single
- * left-edge accent instead of dots, mirroring the web floor board.
- *
- * @example
- * <RoomCard room={room} isFlat={property.isFlat} onPress={() => openRoom(room.id)} />
+ * A tile in the Floor Manager grid (web floor-board RoomCard): the room
+ * number, one status dot per bed (paid / pending / overdue / vacant) and the
+ * sharing type. Flat properties show a single left-edge accent instead.
  */
 export function RoomCard({ room, isFlat, onPress }: RoomCardProps) {
   const flatStatus =
     isFlat && room.beds[0] ? BED_VISUAL_STATUS_META[bedVisualStatus(room.beds[0])] : null;
+  const occupied = room.beds.filter((b) => b.status === 'OCCUPIED').length;
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        flatStatus && { borderLeftWidth: 4, borderLeftColor: flatStatus.color },
-        pressed && styles.pressed,
-      ]}
+      scaleTo={0.95}
+      style={[styles.card, flatStatus && { borderLeftWidth: 4, borderLeftColor: flatStatus.color }]}
       accessibilityRole="button"
-      accessibilityLabel={`${isFlat ? 'Flat' : 'Room'} ${room.number}`}
+      accessibilityLabel={`${isFlat ? 'Flat' : 'Room'} ${room.number}, ${occupied} of ${room.beds.length} occupied`}
     >
-      <Typography variant="h3" style={styles.number}>
+      <Typography style={styles.number} numberOfLines={1} adjustsFontSizeToFit>
         {room.number}
       </Typography>
 
@@ -55,10 +51,10 @@ export function RoomCard({ room, isFlat, onPress }: RoomCardProps) {
         </View>
       )}
 
-      <Typography variant="small" color="textSecondary">
-        {isFlat ? 'Flat' : `${room.beds.length} Sharing`}
+      <Typography variant="small" color="textSecondary" style={styles.caption}>
+        {isFlat ? (flatStatus?.label ?? 'Flat') : `${room.beds.length} Sharing`}
       </Typography>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -67,24 +63,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm - 2,
-    paddingVertical: spacing.md + 4,
+    gap: spacing.sm,
+    paddingVertical: spacing.md + 2,
     paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderRadius: borderRadius.lg + 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     backgroundColor: colors.background,
-    elevation: 1,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-  },
-  pressed: {
-    backgroundColor: colors.surface,
-    transform: [{ scale: 0.97 }],
+    ...elevation.xs,
   },
   number: {
+    fontSize: 20,
+    lineHeight: 24,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: -0.4,
+    color: colors.text,
     fontVariant: ['tabular-nums'],
   },
   dots: {
@@ -92,10 +85,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 4,
+    maxWidth: 64,
   },
   dot: {
     width: 8,
     height: 8,
-    borderRadius: borderRadius.full,
+    borderRadius: 4,
+  },
+  caption: {
+    fontSize: 11,
   },
 });

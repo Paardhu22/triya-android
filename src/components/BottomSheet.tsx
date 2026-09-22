@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Animated,
-  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -11,91 +9,123 @@ import {
   View,
   StyleSheet,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
-import { colors, spacing, borderRadius } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 
 export interface BottomSheetProps {
   visible: boolean;
-  /** Called when the user dismisses (backdrop tap, close button, back). */
+  /** Called when the user dismisses (drag down, backdrop tap, close button, back). */
   onClose: () => void;
   /** Header title. Omit for fully custom content. */
   title?: string;
-  /** Max sheet height as a fraction of the window. Defaults to 0.85. */
+  /** Muted line under the title (tenant · room, billing month…). */
+  subtitle?: string;
+  /** Max sheet height as a fraction of the window. Defaults to 0.9. */
   maxHeightRatio?: number;
   /**
    * Wraps children in a ScrollView (default). Disable when the content
    * manages its own scrolling (e.g. a FlatList).
    */
   scrollable?: boolean;
+  /**
+   * Pinned below the scrolling content — the primary action of a form sheet
+   * ("Record Collection") stays in thumb reach however long the form is.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 }
+
+const EASE_OUT = Easing.bezier(0.2, 0, 0, 1);
+const DISMISS_DISTANCE = 110;
+const DISMISS_VELOCITY = 900;
 
 /**
  * BottomSheet component.
  *
- * The app's replacement for the web's dialogs and side panels: slides up from
- * the bottom with a drag handle, dims the screen, and dismisses on backdrop
- * tap or the hardware back button. Content is keyboard-aware for forms.
- *
- * @example
- * <BottomSheet visible={open} onClose={() => setOpen(false)} title="Room 301">
- *   <BedList beds={room.beds} />
- * </BottomSheet>
+ * The app's replacement for the web's dialogs: slides up with the standard
+ * decelerate curve, follows the finger when dragged by its handle/header and
+ * dismisses past a threshold (or on a flick), dims the screen, and closes on
+ * backdrop tap or the hardware back button. Keyboard-aware for forms, with an
+ * optional pinned footer for the primary action.
  */
 export function BottomSheet({
   visible,
   onClose,
   title,
-  maxHeightRatio = 0.85,
+  subtitle,
+  maxHeightRatio = 0.9,
   scrollable = true,
+  footer,
   children,
 }: BottomSheetProps) {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
-  const progress = useRef(new Animated.Value(0)).current;
+  const translateY = useSharedValue(windowHeight);
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: 260,
-        easing: Easing.bezier(0.2, 0, 0, 1),
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(progress, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) setMounted(false);
-      });
+      translateY.set(windowHeight);
+      translateY.set(withTiming(0, { duration: 340, easing: EASE_OUT }));
+    } else if (mounted) {
+      translateY.set(
+        withTiming(windowHeight, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+          if (finished) scheduleOnRN(setMounted, false);
+        }),
+      );
     }
-  }, [visible, progress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const pan = Gesture.Pan()
+    .activeOffsetY(6)
+    .onChange((e) => {
+      translateY.set(Math.max(0, e.translationY));
+    })
+    .onEnd((e) => {
+      if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
+        scheduleOnRN(onClose);
+      } else {
+        translateY.set(withSpring(0, { damping: 22, stiffness: 260, mass: 0.8 }));
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.get() }],
+  }));
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateY.get(), [0, windowHeight * 0.6], [1, 0], 'clamp'),
+  }));
 
   if (!mounted) return null;
 
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [windowHeight, 0],
-  });
-
+  const bottomPad = insets.bottom + spacing.md;
   const body = scrollable ? (
     <ScrollView
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.lg }]}
+      style={styles.scroll}
+      contentContainerStyle={[styles.content, !footer && { paddingBottom: bottomPad }]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      bounces={false}
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.content, styles.fill, { paddingBottom: insets.bottom + spacing.lg }]}>
+    <View style={[styles.content, styles.fillBody, !footer && { paddingBottom: bottomPad }]}>
       {children}
     </View>
   );
@@ -109,42 +139,54 @@ export function BottomSheet({
       animationType="none"
       onRequestClose={onClose}
     >
-      <View style={styles.fill}>
-        <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+      <GestureHandlerRootView style={styles.fill}>
+        <Animated.View style={[styles.backdrop, backdropStyle]}>
           <Pressable style={styles.fill} onPress={onClose} accessibilityLabel="Close" />
         </Animated.View>
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.avoider}
           pointerEvents="box-none"
         >
           <Animated.View
-            style={[
-              styles.sheet,
-              { maxHeight: windowHeight * maxHeightRatio, transform: [{ translateY }] },
-            ]}
+            style={[styles.sheet, { maxHeight: windowHeight * maxHeightRatio }, sheetStyle]}
           >
-            <View style={styles.handle} />
-            {title !== undefined && (
-              <View style={styles.header}>
-                <Typography variant="h3" style={styles.headerTitle} numberOfLines={1}>
-                  {title}
-                </Typography>
-                <Pressable
-                  onPress={onClose}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Icon name="close" size={22} color={colors.textSecondary} />
-                </Pressable>
+            <GestureDetector gesture={pan}>
+              <View style={styles.grabArea}>
+                <View style={styles.handle} />
+                {title !== undefined && (
+                  <View style={styles.header}>
+                    <View style={styles.headerText}>
+                      <Typography variant="h2" numberOfLines={1}>
+                        {title}
+                      </Typography>
+                      {subtitle ? (
+                        <Typography variant="caption" color="textSecondary" numberOfLines={1}>
+                          {subtitle}
+                        </Typography>
+                      ) : null}
+                    </View>
+                    <Pressable
+                      onPress={onClose}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.close, pressed && styles.closePressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close"
+                    >
+                      <Icon name="close" size={18} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                )}
               </View>
-            )}
+            </GestureDetector>
             {body}
+            {footer ? (
+              <View style={[styles.footer, { paddingBottom: bottomPad }]}>{footer}</View>
+            ) : null}
           </Animated.View>
         </KeyboardAvoidingView>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -167,32 +209,61 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl + 4,
-    borderTopRightRadius: borderRadius.xl + 4,
-    paddingTop: spacing.sm,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
     overflow: 'hidden',
+  },
+  grabArea: {
+    paddingTop: spacing.sm + 2,
+    paddingBottom: spacing.xs,
   },
   handle: {
     alignSelf: 'center',
-    width: 36,
+    width: 38,
     height: 4,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.border,
-    marginBottom: spacing.sm,
+    borderRadius: 2,
+    backgroundColor: colors.ring,
+    marginBottom: spacing.sm + 2,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md + 4,
     paddingBottom: spacing.sm,
   },
-  headerTitle: {
+  headerText: {
     flex: 1,
+    gap: 2,
+  },
+  close: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.canvas,
+  },
+  closePressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  scroll: {
+    flexGrow: 0,
   },
   content: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md + 4,
     paddingTop: spacing.sm,
+  },
+  fillBody: {
+    flexShrink: 1,
+  },
+  footer: {
+    paddingHorizontal: spacing.md + 4,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+    backgroundColor: colors.background,
+    gap: spacing.sm,
   },
 });

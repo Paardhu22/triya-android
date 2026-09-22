@@ -1,17 +1,11 @@
-import { Pressable, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 
-import { Avatar } from '@/components/Avatar';
-import { Icon } from '@/components/Icon';
-import { StatusBadge } from '@/components/StatusBadge';
+import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
-import {
-  BED_VISUAL_STATUS_META,
-  PAYMENT_STATUS_META,
-  bedVisualStatus,
-} from '@/constants';
+import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import type { FloorBed } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
-import { formatINR, formatFullDate } from '@/utils';
+import { borderRadius, colors, elevation, spacing } from '@/theme';
+import { formatINR } from '@/utils';
 
 export interface BedCardProps {
   bed: FloorBed;
@@ -23,113 +17,115 @@ export interface BedCardProps {
 /**
  * BedCard component.
  *
- * One bed inside a room: left accent in the bed's visual status color, the
- * occupant (or "Vacant"), rent, payment badge, and a notice line when the
- * tenant is leaving. Tapping opens the bed's action sheet.
- *
- * @example
- * <BedCard bed={bed} isFlat={false} onPress={() => openBed(bed)} />
+ * One bed drawn like the web room view's bed: a pillow band at the head with
+ * the bed label, the mattress carrying the occupant and rent, and the status
+ * word at the foot in the Floor Manager's bed tone. Vacant beds invite a
+ * check-in.
  */
 export function BedCard({ bed, isFlat, onPress }: BedCardProps) {
-  const visual = BED_VISUAL_STATUS_META[bedVisualStatus(bed)];
+  const status = bedVisualStatus(bed);
+  const visual = BED_VISUAL_STATUS_META[status];
   const tenancy = bed.tenancy;
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        { borderLeftColor: visual.color },
-        pressed && styles.pressed,
-      ]}
+      scaleTo={0.96}
+      style={styles.bed}
       accessibilityRole="button"
-      accessibilityLabel={`Bed ${bed.label}, ${visual.label}`}
+      accessibilityLabel={`${isFlat ? 'Unit' : `Bed ${bed.label}`}, ${visual.label}${tenancy ? `, ${tenancy.tenant.fullName}` : ''}`}
     >
-      <View style={styles.header}>
-        <Typography variant="captionMedium" color="textSecondary">
-          {isFlat ? 'Unit' : `Bed ${bed.label}`}
-        </Typography>
+      <View style={[styles.head, { backgroundColor: visual.softColor }]}>
+        <View style={styles.pillow}>
+          <Typography variant="overline" style={styles.pillowText}>
+            {isFlat ? 'Unit' : `Bed ${bed.label}`}
+          </Typography>
+        </View>
+      </View>
+
+      <View style={styles.mattress}>
         {tenancy ? (
-          <StatusBadge meta={PAYMENT_STATUS_META[tenancy.paymentStatus]} size="sm" />
+          <>
+            <Typography variant="bodySemibold" numberOfLines={1} style={styles.center}>
+              {tenancy.tenant.fullName}
+            </Typography>
+            <Typography variant="numberSmall" color="textSecondary" style={styles.center}>
+              {formatINR(tenancy.monthlyRent)}/mo
+            </Typography>
+            {tenancy.noticeGivenDate ? (
+              <Typography variant="small" colorValue={colors.warning} style={styles.center}>
+                On notice
+              </Typography>
+            ) : null}
+          </>
         ) : (
-          <StatusBadge
-            meta={{ label: 'Vacant', color: visual.color, softColor: visual.softColor }}
-            size="sm"
-          />
+          <Typography variant="caption" color="textSecondary" style={styles.center}>
+            Tap to check in
+          </Typography>
         )}
       </View>
 
-      {tenancy ? (
-        <>
-          <View style={styles.tenantRow}>
-            <Avatar name={tenancy.tenant.fullName} size="sm" />
-            <View style={styles.tenantText}>
-              <Typography variant="bodyMedium" numberOfLines={1}>
-                {tenancy.tenant.fullName}
-              </Typography>
-              <Typography variant="small" color="textSecondary" numberOfLines={1}>
-                {formatINR(tenancy.monthlyRent)}/mo · since {formatFullDate(tenancy.checkInDate)}
-              </Typography>
-            </View>
-            <Icon name="chevron-right" size={20} color={colors.textTertiary} />
-          </View>
-          {tenancy.noticeGivenDate && tenancy.expectedLeavingDate && (
-            <View style={styles.noticeRow}>
-              <Icon name="calendar-alert" size={14} color={colors.warning} />
-              <Typography variant="small" colorValue={colors.warning}>
-                Notice given · vacating by {formatFullDate(tenancy.expectedLeavingDate)}
-              </Typography>
-            </View>
-          )}
-        </>
-      ) : (
-        <View style={styles.vacantRow}>
-          <Icon name="bed-outline" size={18} color={colors.textTertiary} />
-          <Typography variant="caption" color="textSecondary">
-            Vacant — tap to add a tenant
-          </Typography>
-        </View>
-      )}
-    </Pressable>
+      <View style={styles.foot}>
+        <View style={[styles.dot, { backgroundColor: visual.color }]} />
+        <Typography variant="overline" colorValue={status === 'vacant' ? colors.textSecondary : visual.color}>
+          {status === 'vacant' ? 'Available' : visual.label}
+        </Typography>
+      </View>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderLeftWidth: 4,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.background,
-    padding: spacing.md,
-    gap: spacing.sm + 2,
-  },
-  pressed: {
-    backgroundColor: colors.surface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  tenantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + 4,
-  },
-  tenantText: {
+  bed: {
     flex: 1,
-    gap: 1,
+    minHeight: 168,
+    borderRadius: borderRadius.lg + 2,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    ...elevation.xs,
   },
-  noticeRow: {
+  head: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 4,
+  },
+  pillow: {
+    minWidth: 76,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 6,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(44, 48, 64, 0.08)',
+  },
+  pillowText: {
+    color: colors.text,
+    letterSpacing: 0.6,
+  },
+  mattress: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+  },
+  center: {
+    textAlign: 'center',
+  },
+  foot: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs + 2,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
   },
-  vacantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });

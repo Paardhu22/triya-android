@@ -1,52 +1,81 @@
-import { View, StyleSheet, type ViewProps } from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Typography } from '@/components/Typography';
-import { spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 
-export interface SectionHeaderProps extends ViewProps {
-  /** Section title text. */
+export interface SectionHeaderProps {
+  /** Uppercase kicker — the web's "CAPACITY OVERVIEW" section label. */
   title: string;
-  /** Optional subtitle displayed below the title. */
+  /** Right-aligned meta, e.g. "12 Rooms Total" or "82% Realization". */
+  meta?: string | ReactNode;
+  /** Makes the meta a link-style action ("See all"). */
+  onMetaPress?: () => void;
+  /** Muted sentence-case line under the kicker. */
   subtitle?: string;
+  style?: StyleProp<ViewStyle>;
 }
 
 /**
  * SectionHeader component.
  *
- * A title and optional subtitle used to introduce a content section.
- * Provides consistent vertical spacing below the header.
- *
- * @example
- * <SectionHeader title="Properties" subtitle="Select your property" />
- * <SectionHeader title="Account Settings" />
+ * The Swiss section label that sits above a Surface: uppercase, tracked,
+ * muted, with an optional right-hand figure. Mirrors the web dashboard's
+ * `text-xs font-semibold tracking-wider uppercase` headers.
  */
-export function SectionHeader({
-  title,
-  subtitle,
-  style,
-  ...rest
-}: SectionHeaderProps) {
+export function SectionHeader({ title, meta, onMetaPress, subtitle, style }: SectionHeaderProps) {
+  const metaNode =
+    typeof meta === 'string' ? (
+      <Typography
+        variant="small"
+        colorValue={onMetaPress ? colors.text : colors.textSecondary}
+        style={onMetaPress ? styles.link : undefined}
+        numberOfLines={1}
+      >
+        {meta}
+      </Typography>
+    ) : (
+      meta
+    );
+
   return (
-    <View style={[styles.container, style]} {...rest}>
-      <Typography variant="h3">{title}</Typography>
-      {subtitle && (
-        <Typography
-          variant="caption"
-          color="textSecondary"
-          style={styles.subtitle}
-        >
-          {subtitle}
+    <View style={[styles.row, style]}>
+      <View style={styles.title}>
+        <Typography variant="overline" color="textSecondary" numberOfLines={1}>
+          {title}
         </Typography>
-      )}
+        {subtitle ? (
+          <Typography variant="small" color="textTertiary" numberOfLines={2}>
+            {subtitle}
+          </Typography>
+        ) : null}
+      </View>
+      {metaNode !== undefined &&
+        (onMetaPress ? (
+          <Pressable onPress={onMetaPress} hitSlop={10} accessibilityRole="button">
+            {metaNode}
+          </Pressable>
+        ) : (
+          metaNode
+        ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: spacing.md,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingHorizontal: 4,
+    marginBottom: spacing.sm + 2,
   },
-  subtitle: {
-    marginTop: spacing.xs,
+  title: {
+    flexShrink: 1,
+    gap: 2,
+  },
+  link: {
+    fontFamily: 'Inter_600SemiBold',
   },
 });

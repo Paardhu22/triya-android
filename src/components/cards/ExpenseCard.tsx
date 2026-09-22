@@ -40,16 +40,13 @@ export function ExpenseCard({ expense, onPress }: ExpenseCardProps) {
   return (
     <Pressable
       onPress={onPress}
+      android_ripple={{ color: colors.surfacePressed }}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={`${expense.categoryName} expense, ${formatINR(expense.amount)}`}
     >
       <View style={styles.iconBox}>
-        <Icon
-          name={expenseCategoryIcon(expense.categoryName)}
-          size={20}
-          color={colors.primary}
-        />
+        <Icon name={expenseCategoryIcon(expense.categoryName)} size={19} color={colors.text} />
       </View>
 
       <View style={styles.body}>
@@ -63,7 +60,7 @@ export function ExpenseCard({ expense, onPress }: ExpenseCardProps) {
       </View>
 
       <View style={styles.right}>
-        <Typography variant="bodyMedium">{formatINR(expense.amount)}</Typography>
+        <Typography variant="number">{formatINR(expense.amount)}</Typography>
         {expense.receiptKey && (
           <View style={styles.receiptTag}>
             <Icon name="paperclip" size={12} color={colors.textTertiary} />
@@ -81,21 +78,19 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
     backgroundColor: colors.background,
   },
   pressed: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
   },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
   },
