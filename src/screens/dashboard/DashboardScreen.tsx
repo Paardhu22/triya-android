@@ -1,47 +1,75 @@
-import { RefreshControl, ScrollView, View, StyleSheet } from 'react-native';
+import { RefreshControl, View, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
 
 import {
-  Icon,
+  BarChart,
+  LargeTitle,
+  ListRow,
+  OccupancyBars,
+  ProgressBar,
   Screen,
+  SectionHeader,
   Skeleton,
+  StatCell,
+  StatGrid,
+  StatusBadge,
+  Surface,
+  TopBar,
   Typography,
   enterItem,
+  useScrollHeader,
 } from '@/components';
 import {
+  COLLECTION_STATE_META,
   COMPLAINT_PRIORITY_META,
   COMPLAINT_STATUS_META,
   PAYMENT_STATUS_META,
 } from '@/constants';
 import { useDashboard } from '@/hooks';
-import { FLAT_BLOCK_FLAVOURS, type DashboardData } from '@/mocks';
+import type { DashboardData } from '@/mocks';
 import { useActiveProperty } from '@/store';
-import { colors, spacing, borderRadius } from '@/theme';
-import { formatDotted, formatINR } from '@/utils';
-import { TabHeader } from '../shared/TabHeader';
+import { borderRadius, colors, spacing, GUTTER } from '@/theme';
 import {
-  BlueprintPanel,
-  BlueprintStatCard,
-  CodeText,
-  EnumChip,
-  Kicker,
-} from './blueprint';
+  PAYMENT_METHOD_META,
+  bedLocationLabel,
+  formatFullDate,
+  formatINR,
+  formatINRCompact,
+  formatLongDate,
+  formatMonthYear,
+  vacateByDate,
+} from '@/utils';
+
+/** "2 sharing", "Single" — the vocabulary staff actually use (web `sharingLabel`). */
+function sharingLabel(sharingType: number, isFlat: boolean): string {
+  if (isFlat) return 'Flat';
+  if (sharingType === 1) return 'Single';
+  return `${sharingType} sharing`;
+}
+
+const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
 /**
  * DashboardScreen
  *
- * The property overview in the web dashboard's blueprint style: four
- * grid-paper stat cards (capacity, occupancy, collections, expenses),
- * the room/block capacity breakdown, and recent payments + complaints.
- * Figures and copy mirror the web page exactly.
+ * The web dashboard's Swiss grid on a phone: capacity and financial-ledger
+ * stat grids, the six-month collections-vs-expenses chart, occupancy by
+ * sharing type / block / floor, rent settlement, the notice register and the
+ * latest activity. Every figure comes from the same roll-up as the web, so
+ * the totals always reconcile.
  */
 export function DashboardScreen() {
   const property = useActiveProperty();
   const { data, isLoading, isRefreshing, refresh } = useDashboard(property.id);
+  const { scrollY, onScroll } = useScrollHeader();
 
   return (
-    <Screen edges={['top']} padded={false} keyboardAvoiding={false}>
-      <ScrollView
+    <Screen edges={['top']} padded={false} keyboardAvoiding={false} background={colors.canvas}>
+      <TopBar title="Dashboard" scrollY={scrollY} />
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -53,314 +81,447 @@ export function DashboardScreen() {
           />
         }
       >
-        <TabHeader title="Dashboard" />
+        <LargeTitle
+          title="Dashboard"
+          subtitle={`Occupancy and rent for ${property.name} as at ${formatLongDate(new Date())}.`}
+          scrollY={scrollY}
+        />
         {isLoading || !data ? <DashboardSkeleton /> : <DashboardBody data={data} />}
-      </ScrollView>
+      </Animated.ScrollView>
     </Screen>
   );
 }
 
 function DashboardBody({ data }: { data: DashboardData }) {
+  const router = useRouter();
   const property = useActiveProperty();
-  const isFlat = property.isFlat;
+  const { isFlat, hasBlocks } = property;
+  const occupancyRate = pct(data.occupiedBeds, data.totalBeds);
+  const collectionRate = pct(data.collectedPaise, data.expectedPaise);
+  const unit = isFlat ? 'flats' : 'beds';
 
-  // Flat properties count whole units; PGs count beds (web dashboard rule).
-  const totalUnits = isFlat ? data.totalRooms : data.totalBeds;
-  const occupancyRate = totalUnits > 0 ? Math.round((data.occupiedBeds / totalUnits) * 100) : 0;
+  let section = 0;
+  const next = () => enterItem(section++);
 
   return (
     <View style={styles.body}>
-      {/* Capacity & summary stats — FIG.01–04 */}
-      <Animated.View entering={enterItem(0)} style={styles.statRow}>
-        <BlueprintStatCard
-          fig="FIG.01"
-          accent="blue"
-          kicker={isFlat ? 'Total flats' : 'Total capacity'}
-          rawValue={totalUnits}
-          description={
-            <>
-              Active units in this property:{' '}
-              <CodeText>{isFlat ? `${totalUnits} flats` : `${data.totalRooms} rooms`}</CodeText>.
-            </>
-          }
-          footer='status = "active"'
+      {/* 01 · Capacity overview */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title="Capacity overview"
+          meta={`${data.totalRooms} ${isFlat ? 'units' : 'rooms'} total`}
         />
-        <BlueprintStatCard
-          fig="FIG.02"
-          accent="purple"
-          kicker="Occupancy status"
-          rawValue={occupancyRate}
-          format={(n) => `${n}%`}
-          progressPct={occupancyRate}
-          description={
-            <>
-              Active tenancy breakdown: <CodeText>{data.occupiedBeds} occupied</CodeText> and{' '}
-              <CodeText>{data.availableBeds} vacant</CodeText>.
-            </>
-          }
-          footer={`rate = "${occupancyRate}%"`}
-        />
+        <Surface>
+          <StatGrid>
+            <StatCell
+              label={isFlat ? 'Total flats' : 'Total beds'}
+              value={data.totalBeds}
+              hint={`Across ${data.totalRooms} ${isFlat ? 'units' : 'rooms'}`}
+            />
+            <StatCell
+              label="Occupied"
+              value={data.occupiedBeds}
+              hint={`${occupancyRate}% of capacity filled`}
+            />
+            <StatCell label="Available" value={data.availableBeds} hint={`${unit} ready to move in`} />
+            <StatCell
+              label={isFlat ? 'Units let' : 'Rooms full'}
+              value={`${data.fullRooms}/${data.totalRooms}`}
+              hint={`${data.partialRooms} part filled · ${data.emptyRooms} empty`}
+            />
+          </StatGrid>
+          <View style={styles.occupancyStrip}>
+            <ProgressBar pct={occupancyRate} color={colors.chart1} height={4} />
+          </View>
+        </Surface>
       </Animated.View>
 
-      <Animated.View entering={enterItem(1)} style={styles.statRow}>
-        <BlueprintStatCard
-          fig="FIG.03"
-          accent="emerald"
-          kicker="Collections (month)"
-          rawValue={data.monthlyCollections}
-          format={formatINR}
-          valueSize={23}
-          description={
-            <>
-              Summary of active contracts: <CodeText>{data.paidCount} paid</CodeText> and{' '}
-              <CodeText>{data.pendingCount} unpaid</CodeText>.
-            </>
-          }
-          footer='revenue = "PAID"'
+      {/* 02 · Financial ledger */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title={`Financial ledger · ${formatMonthYear(data.monthStart).split(' ')[0]}`}
+          meta={`${collectionRate}% realization`}
         />
-        <BlueprintStatCard
-          fig="FIG.04"
-          accent="rose"
-          kicker="Expenses (month)"
-          rawValue={data.monthlyExpenses}
-          format={formatINR}
-          valueSize={23}
-          description={
-            <>
-              Total operational costs: <CodeText>{formatINR(data.monthlyExpenses)}</CodeText>{' '}
-              debited.
-            </>
-          }
-          footer='outflow = "DEBIT"'
-        />
+        <Surface>
+          <StatGrid>
+            <StatCell
+              label="Expected rent"
+              value={data.expectedPaise}
+              format={formatINRCompact}
+              hint={`${data.activeTenancies} active ${data.activeTenancies === 1 ? 'tenancy' : 'tenancies'}`}
+            />
+            <StatCell
+              label="Collected"
+              value={data.collectedPaise}
+              format={formatINRCompact}
+              hint={`${collectionRate}% of target collected`}
+            />
+            <StatCell
+              label="Outstanding"
+              value={data.outstandingPaise}
+              format={formatINRCompact}
+              hint={`${data.unpaidCount} unpaid · ${data.partialCount} part paid · ${data.overdueCount} overdue`}
+            />
+            <StatCell
+              label="Expenses"
+              value={data.expensesPaise}
+              format={formatINRCompact}
+              hint={`Net ${formatINRCompact(data.netPaise)} this month`}
+            />
+          </StatGrid>
+          <ListRow
+            divider
+            insetDivider={false}
+            title="Open collections"
+            subtitle="Collect rent, send invoices and reminders"
+            icon="wallet-outline"
+            onPress={() => router.navigate('/(main)/(tabs)/collections' as never)}
+          />
+        </Surface>
       </Animated.View>
 
-      {/* Capacity breakdown — FIG.05+ */}
-      <Animated.View entering={enterItem(2)} style={styles.section}>
-        <Kicker label={isFlat ? 'Flat type breakdown' : 'Room capacity breakdown'} />
+      {/* 03 · Trend */}
+      <Animated.View entering={next()}>
+        <SectionHeader title="Collections vs expenses" meta="Trailing 6 months" />
+        <Surface padded>
+          <BarChart
+            data={data.trend.map((t) => ({
+              label: t.label,
+              values: { collected: t.collectedPaise, expenses: t.expensesPaise },
+            }))}
+            series={[
+              { key: 'collected', label: 'Collected', color: colors.chart1 },
+              { key: 'expenses', label: 'Expenses', color: colors.chart5 },
+            ]}
+            format={formatINRCompact}
+            formatValue={formatINR}
+          />
+        </Surface>
       </Animated.View>
-      <View style={styles.breakdownList}>
-        {isFlat
-          ? data.blockBreakdown.map((block, idx) => {
-              const flavour = FLAT_BLOCK_FLAVOURS[block.name];
-              const rate = block.rooms > 0 ? Math.round((block.occupied / block.rooms) * 100) : 0;
+
+      {/* 04 · Capacity breakdown */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title={isFlat ? 'Occupancy by unit type' : 'Occupancy by sharing type'}
+          meta={`${data.sharingBreakdown.reduce((n, r) => n + r.available, 0)} ${unit} available`}
+        />
+        <Surface>
+          {data.sharingBreakdown.length > 1 && (
+            <View style={styles.chartPad}>
+              <OccupancyBars
+                rows={data.sharingBreakdown.map((r) => ({
+                  label: sharingLabel(r.sharingType, isFlat),
+                  occupied: r.occupied,
+                  available: r.available,
+                }))}
+              />
+            </View>
+          )}
+          {data.sharingBreakdown.map((r, i) => (
+            <ListRow
+              key={r.sharingType}
+              divider={i > 0 || data.sharingBreakdown.length > 1}
+              title={sharingLabel(r.sharingType, isFlat)}
+              subtitle={`${r.rooms} ${isFlat ? 'flats' : 'rooms'} · ${r.occupied}/${r.beds} occupied · ${pct(r.occupied, r.beds)}% fill`}
+              trailing={
+                <View style={styles.trailingRight}>
+                  <Typography variant="number">{formatINRCompact(r.expectedPaise)}</Typography>
+                  <Typography variant="small" color="textTertiary">
+                    rent / month
+                  </Typography>
+                </View>
+              }
+            />
+          ))}
+          {data.sharingBreakdown.length === 0 && (
+            <EmptyLine text="No rooms configured for this property yet." />
+          )}
+        </Surface>
+      </Animated.View>
+
+      {/* Blocks — only with two or more, else there is nothing to compare. */}
+      {hasBlocks && data.blockBreakdown.length > 1 && (
+        <Animated.View entering={next()}>
+          <SectionHeader title="Block occupancy" meta={`${data.blockBreakdown.length} blocks`} />
+          <Surface padded>
+            <OccupancyBars
+              rows={data.blockBreakdown.map((b) => ({
+                label: `Block ${b.name}`,
+                occupied: b.occupied,
+                available: b.available,
+              }))}
+            />
+          </Surface>
+        </Animated.View>
+      )}
+
+      {/* 05 · Floor directory */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title="Floor occupancy directory"
+          meta={`${data.floorBreakdown.length} floors`}
+        />
+        <Surface>
+          {data.floorBreakdown.length === 0 ? (
+            <EmptyLine text="No floors configured for this property yet." />
+          ) : (
+            data.floorBreakdown.map((f, i) => {
+              const fill = pct(f.occupied, f.beds);
               return (
-                <Animated.View key={block.name} entering={enterItem(3 + idx)}>
-                  <BlueprintStatCard
-                    fig={`FIG.0${5 + idx}`}
-                    accent="blue"
-                    kicker={`Block ${block.name}${flavour ? ` (${flavour})` : ''}`}
-                    rawValue={block.rooms}
-                    progressPct={rate}
-                    description={
-                      <>
-                        Status: <CodeText>{block.occupied} occupied</CodeText> and{' '}
-                        <CodeText>{block.available} available</CodeText>.
-                      </>
-                    }
-                    footer={`block = "${block.name.toLowerCase()}"`}
-                  />
-                </Animated.View>
+                <View key={f.id} style={[styles.floorRow, i > 0 && styles.hairlineTop]}>
+                  <View style={styles.floorText}>
+                    <Typography variant="bodyMedium" numberOfLines={1}>
+                      {f.blockName ? `Block ${f.blockName} · ` : ''}
+                      {f.name ?? `Floor ${f.number}`}
+                    </Typography>
+                    <Typography variant="small" color="textSecondary">
+                      {f.rooms} {isFlat ? 'flats' : 'rooms'} · {f.occupied}/{f.beds} occupied ·{' '}
+                      {f.available} free
+                    </Typography>
+                  </View>
+                  <View style={styles.fillCol}>
+                    <Typography variant="numberSmall">{fill}%</Typography>
+                    <View style={styles.fillBar}>
+                      <ProgressBar pct={fill} height={4} delay={120 + i * 40} />
+                    </View>
+                  </View>
+                </View>
               );
             })
-          : data.sharingBreakdown.map((row, idx) => {
-              const rate = row.beds > 0 ? Math.round((row.occupied / row.beds) * 100) : 0;
-              return (
-                <Animated.View key={row.sharingType} entering={enterItem(3 + idx)}>
-                  <BlueprintStatCard
-                    fig={`FIG.0${5 + idx}`}
-                    accent="purple"
-                    kicker={`${row.sharingType} sharing rooms`}
-                    rawValue={row.rooms}
-                    progressPct={rate}
-                    description={
-                      <>
-                        Beds capacity: <CodeText>{row.occupied}/{row.beds} occupied</CodeText>{' '}
-                        and <CodeText>{row.available} vacant</CodeText>.
-                      </>
-                    }
-                    footer={`sharing = "${row.sharingType}p"`}
-                  />
-                </Animated.View>
-              );
-            })}
-      </View>
-
-      {/* Recent payments — FIG.08 */}
-      <Animated.View entering={enterItem(4)} style={styles.section}>
-        <BlueprintPanel
-          fig="FIG.08"
-          kicker="Recent payments"
-          accent="emerald"
-          footerLeft='transaction = "all"'
-          footerRight='type = "payment"'
-        >
-          {data.recentPayments.length === 0 ? (
-            <Typography variant="mono" color="textSecondary" style={styles.emptyRow}>
-              No recent payment transactions found.
-            </Typography>
-          ) : (
-            data.recentPayments.map((payment) => (
-              <View key={payment.id} style={styles.activityRow}>
-                <View style={[styles.activityChip, styles.chipEmerald]}>
-                  <Icon name="arrow-top-right" size={14} color="#10B981" />
-                </View>
-                <View style={styles.activityText}>
-                  <Typography variant="captionMedium" numberOfLines={1}>
-                    {payment.tenantName}
-                  </Typography>
-                  <Typography variant="mono" color="textTertiary" style={styles.activityDate}>
-                    {formatDotted(payment.createdAt)}
-                  </Typography>
-                </View>
-                <View style={styles.activityRight}>
-                  <Typography variant="mono" style={styles.amount}>
-                    {formatINR(payment.amount)}
-                  </Typography>
-                  <EnumChip
-                    label={payment.status}
-                    color={PAYMENT_STATUS_META[payment.status].color}
-                    softColor={PAYMENT_STATUS_META[payment.status].softColor}
-                  />
-                </View>
-              </View>
-            ))
           )}
-        </BlueprintPanel>
+        </Surface>
       </Animated.View>
 
-      {/* Recent complaints — FIG.09 */}
-      <Animated.View entering={enterItem(5)} style={styles.section}>
-        <BlueprintPanel
-          fig="FIG.09"
-          kicker="Recent complaints"
-          accent="rose"
-          footerLeft='tickets = "open"'
-          footerRight='type = "complaint"'
-        >
-          {data.recentComplaints.length === 0 ? (
-            <Typography variant="mono" color="textSecondary" style={styles.emptyRow}>
-              No active complaints reported.
-            </Typography>
+      {/* 06 · Rent settlement */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title="Rent settlement status"
+          meta={`${data.activeTenancies} tenancies`}
+        />
+        <Surface>
+          {(
+            [
+              [COLLECTION_STATE_META.PAID, data.paidCount],
+              [COLLECTION_STATE_META.PARTIAL, data.partialCount],
+              [COLLECTION_STATE_META.UNPAID, data.unpaidCount],
+              [
+                { ...PAYMENT_STATUS_META.OVERDUE, label: 'Overdue (unpaid or part paid)' },
+                data.overdueCount,
+              ],
+            ] as const
+          ).map(([meta, count], i) => (
+            <View key={meta.label} style={[styles.settleRow, i > 0 && styles.hairlineTop]}>
+              <StatusBadge meta={meta} />
+              <Typography variant="number">
+                {count}{' '}
+                <Typography variant="small" color="textSecondary">
+                  {count === 1 ? 'tenancy' : 'tenancies'}
+                </Typography>
+              </Typography>
+            </View>
+          ))}
+          <View style={[styles.movement, styles.hairlineTop]}>
+            <Movement value={data.moveInsThisMonth} label="Moved in" />
+            <Movement value={data.moveOutsThisMonth} label="Moved out" divider />
+            <Movement value={data.openComplaints} label="Complaints" divider />
+          </View>
+        </Surface>
+      </Animated.View>
+
+      {/* 07 · Notice register */}
+      <Animated.View entering={next()}>
+        <SectionHeader title="Notice register" meta={`${data.noticeTenancies.length} scheduled`} />
+        <Surface>
+          {data.noticeTenancies.length === 0 ? (
+            <EmptyLine text="No active move-out notices on file." />
           ) : (
-            data.recentComplaints.map((complaint) => (
-              <View key={complaint.id} style={styles.activityRow}>
-                <View style={[styles.activityChip, styles.chipRose]}>
-                  <Icon name="clipboard-text-outline" size={14} color="#F43F5E" />
-                </View>
-                <View style={styles.activityText}>
-                  <Typography variant="captionMedium" numberOfLines={1}>
-                    {complaint.title}
-                  </Typography>
-                  <Typography variant="small" color="textTertiary" numberOfLines={1}>
-                    By {complaint.tenantName ?? 'Staff'} ·{' '}
-                    <Typography variant="mono" color="textTertiary" style={styles.activityDate}>
-                      {formatDotted(complaint.createdAt)}
+            data.noticeTenancies.map((t, i) => (
+              <ListRow
+                key={t.id}
+                divider={i > 0}
+                title={t.name}
+                subtitle={bedLocationLabel(t.roomNumber, t.bedLabel, isFlat)}
+                onPress={() => router.push(`/(main)/tenants/${t.tenantId}` as never)}
+                trailing={
+                  <View style={styles.trailingRight}>
+                    <Typography variant="numberSmall">
+                      {formatFullDate(vacateByDate(t.noticeGivenDate))}
                     </Typography>
-                  </Typography>
-                </View>
-                <View style={styles.badgeColumn}>
-                  <EnumChip
-                    label={complaint.priority}
-                    color={COMPLAINT_PRIORITY_META[complaint.priority].color}
-                    softColor={COMPLAINT_PRIORITY_META[complaint.priority].softColor}
-                  />
-                  <EnumChip
-                    label={complaint.status}
-                    color={COMPLAINT_STATUS_META[complaint.status].color}
-                    softColor={COMPLAINT_STATUS_META[complaint.status].softColor}
-                  />
-                </View>
-              </View>
+                    <Typography variant="overline" color="textTertiary">
+                      Vacate by
+                    </Typography>
+                  </View>
+                }
+              />
             ))
           )}
-        </BlueprintPanel>
+        </Surface>
+      </Animated.View>
+
+      {/* 08 · Recent collections */}
+      <Animated.View entering={next()}>
+        <SectionHeader title="Recent collections" meta="Latest 5" />
+        <Surface>
+          {data.recentPayments.length === 0 ? (
+            <EmptyLine text="No payment transactions recorded yet." />
+          ) : (
+            data.recentPayments.map((p, i) => (
+              <ListRow
+                key={p.id}
+                divider={i > 0}
+                title={p.tenantName}
+                subtitle={`${formatFullDate(p.createdAt)} · ${PAYMENT_METHOD_META[p.method].label}`}
+                trailing={<Typography variant="number">{formatINR(p.amount)}</Typography>}
+              />
+            ))
+          )}
+        </Surface>
+      </Animated.View>
+
+      {/* 09 · Complaints log */}
+      <Animated.View entering={next()}>
+        <SectionHeader
+          title="Incident & complaints log"
+          meta="See all"
+          onMetaPress={() => router.push('/(main)/complaints' as never)}
+        />
+        <Surface>
+          {data.recentComplaints.length === 0 ? (
+            <EmptyLine text="No tickets or complaints raised yet." />
+          ) : (
+            data.recentComplaints.map((c, i) => (
+              <ListRow
+                key={c.id}
+                divider={i > 0}
+                title={c.title}
+                subtitle={`${c.tenantName ?? 'Staff'} · ${formatFullDate(c.createdAt)}`}
+                onPress={() => router.push(`/(main)/complaints/${c.id}` as never)}
+                trailing={
+                  <View style={styles.badgeCol}>
+                    <StatusBadge meta={COMPLAINT_STATUS_META[c.status]} size="sm" />
+                    <StatusBadge meta={COMPLAINT_PRIORITY_META[c.priority]} size="sm" />
+                  </View>
+                }
+              />
+            ))
+          )}
+        </Surface>
       </Animated.View>
     </View>
+  );
+}
+
+function Movement({ value, label, divider }: { value: number; label: string; divider?: boolean }) {
+  return (
+    <View style={[styles.movementCell, divider && styles.hairlineLeft]}>
+      <Typography variant="h2" style={styles.tabular}>
+        {value}
+      </Typography>
+      <Typography variant="overline" color="textSecondary">
+        {label}
+      </Typography>
+    </View>
+  );
+}
+
+function EmptyLine({ text }: { text: string }) {
+  return (
+    <Typography variant="caption" color="textSecondary" style={styles.empty}>
+      {text}
+    </Typography>
   );
 }
 
 function DashboardSkeleton() {
   return (
     <View style={styles.body}>
-      <View style={styles.statRow}>
-        <Skeleton height={196} radius={borderRadius.xl} style={styles.flexOne} />
-        <Skeleton height={196} radius={borderRadius.xl} style={styles.flexOne} />
-      </View>
-      <View style={styles.statRow}>
-        <Skeleton height={196} radius={borderRadius.xl} style={styles.flexOne} />
-        <Skeleton height={196} radius={borderRadius.xl} style={styles.flexOne} />
-      </View>
-      <Skeleton height={180} radius={borderRadius.xl} />
-      <Skeleton height={220} radius={borderRadius.xl} />
+      {[200, 200, 260, 220].map((h, i) => (
+        <View key={i} style={styles.skeletonBlock}>
+          <Skeleton width={140} height={11} />
+          <Skeleton height={h} radius={borderRadius.lg} />
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingBottom: spacing.xxl,
   },
   body: {
-    gap: spacing.sm + 4,
+    gap: spacing.lg,
   },
-  statRow: {
-    flexDirection: 'row',
-    gap: spacing.sm + 4,
-    alignItems: 'stretch',
+  occupancyStrip: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
-  flexOne: {
-    flex: 1,
+  chartPad: {
+    padding: spacing.md,
+    paddingBottom: spacing.md + 2,
   },
-  section: {
-    marginTop: spacing.sm,
+  trailingRight: {
+    alignItems: 'flex-end',
+    gap: 2,
   },
-  breakdownList: {
-    gap: spacing.sm + 4,
-  },
-  activityRow: {
+  floorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm + 4,
+    gap: spacing.md,
+    paddingVertical: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
   },
-  activityChip: {
-    width: 28,
-    height: 28,
-    borderRadius: borderRadius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipEmerald: {
-    backgroundColor: 'rgba(16, 185, 129, 0.10)',
-  },
-  chipRose: {
-    backgroundColor: 'rgba(244, 63, 94, 0.10)',
-  },
-  activityText: {
+  floorText: {
     flex: 1,
-    gap: 1,
+    gap: 2,
   },
-  activityDate: {
-    fontSize: 10,
-    lineHeight: 14,
+  fillCol: {
+    width: 64,
+    alignItems: 'flex-end',
+    gap: 6,
   },
-  activityRight: {
+  fillBar: {
+    width: 56,
+  },
+  hairlineTop: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  hairlineLeft: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.divider,
+  },
+  settleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm + 6,
+    paddingHorizontal: spacing.md,
+  },
+  movement: {
+    flexDirection: 'row',
+    backgroundColor: colors.canvas,
+  },
+  movementCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.md,
+  },
+  tabular: {
+    fontVariant: ['tabular-nums'],
+  },
+  badgeCol: {
     alignItems: 'flex-end',
     gap: 4,
   },
-  amount: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: colors.text,
-    fontWeight: 'bold',
-  },
-  badgeColumn: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  emptyRow: {
-    paddingVertical: spacing.xl,
+  empty: {
     textAlign: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  skeletonBlock: {
+    gap: spacing.sm + 2,
   },
 });
