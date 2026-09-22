@@ -7,25 +7,27 @@ import {
   BottomSheet,
   Button,
   ConfirmDialog,
-  Divider,
   Icon,
+  KeyValue,
+  ProgressBar,
   StatusBadge,
   Typography,
+  toast,
 } from '@/components';
-import { PAYMENT_STATUS_META } from '@/constants';
+import { COLLECTION_STATE_META, PAYMENT_STATUS_META } from '@/constants';
 import { useAction } from '@/hooks';
 import { giveNotice, vacateBed, type FloorBed } from '@/mocks';
-import { colors, spacing, borderRadius } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import {
   bedLocationLabel,
-  currentCycleDuePaise,
   formatFullDate,
   formatINR,
+  formatMonthYear,
   resolveDepositStatusOnVacate,
   vacateByDate,
   NOTICE_PERIOD_DAYS,
 } from '@/utils';
-import { MarkPaidFlow } from '../collections/MarkPaidFlow';
+import { CollectRentSheet } from '../collections/CollectRentSheet';
 import { SendInvoiceSheet } from '../collections/SendInvoiceSheet';
 import { AssignTenantForm } from './AssignTenantForm';
 
@@ -40,17 +42,17 @@ export interface BedSheetProps {
 /**
  * BedSheet
  *
- * Everything about one bed, in a bottom sheet (the web's bed dialog,
- * redesigned for touch). Occupied beds show the tenant with the rent-cycle
- * actions — mark paid, send invoice, give notice, vacate (deposit outcome
- * follows the 15-day notice rule). Vacant beds open straight into the
- * check-in form, the primary floor-manager workflow.
+ * Everything about one bed (the web's bed dialog, for touch). Occupied beds
+ * show the tenant, this month's collection position and the actions —
+ * Collect Rent (part payments welcome), send a bill, record notice, vacate
+ * (deposit outcome follows the 15-day notice rule). Vacant beds open straight
+ * into the check-in form.
  */
 export function BedSheet({ bed, roomNumber, isFlat, visible, onClose }: BedSheetProps) {
   const router = useRouter();
   const { busy, run } = useAction();
 
-  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [collectOpen, setCollectOpen] = useState(false);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [noticeConfirmOpen, setNoticeConfirmOpen] = useState(false);
   const [vacateConfirmOpen, setVacateConfirmOpen] = useState(false);
@@ -67,105 +69,151 @@ export function BedSheet({ bed, roomNumber, isFlat, visible, onClose }: BedSheet
   async function onGiveNotice() {
     if (!tenancy) return;
     const result = await run(() => giveNotice(tenancy.id));
-    if (result.ok) setNoticeConfirmOpen(false);
+    setNoticeConfirmOpen(false);
+    if (result.ok) {
+      toast.success('Notice recorded', {
+        description: `Vacate by ${formatFullDate(result.data.vacateBy)}.`,
+      });
+    } else toast.error(result.error);
   }
 
   async function onVacate() {
     if (!tenancy) return;
     const result = await run(() => vacateBed(tenancy.id));
+    setVacateConfirmOpen(false);
     if (result.ok) {
-      setVacateConfirmOpen(false);
+      toast.success(`${isFlat ? 'Flat' : 'Bed'} vacated`, {
+        description: `Deposit marked ${result.data.depositStatus.toLowerCase()}. The stay is kept in history.`,
+      });
       onClose();
-    }
+    } else toast.error(result.error);
   }
+
+  const collectedPct =
+    tenancy && tenancy.duePaise > 0
+      ? Math.round((tenancy.collectedPaise / tenancy.duePaise) * 100)
+      : 100;
 
   return (
     <>
-      <BottomSheet visible={visible} onClose={onClose} title={title}>
+      <BottomSheet
+        visible={visible}
+        onClose={onClose}
+        title={title}
+        subtitle={tenancy ? 'Occupied' : 'Vacant — check a tenant in'}
+      >
         {tenancy ? (
           <View style={styles.body}>
             {/* Tenant */}
             <Pressable
               onPress={() => {
                 onClose();
-                router.push(`/(main)/tenants/${tenancy.tenant.id}` as any);
+                router.push(`/(main)/tenants/${tenancy.tenant.id}` as never);
               }}
               style={({ pressed }) => [styles.tenantRow, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={`Open ${tenancy.tenant.fullName}'s profile`}
             >
-              <Avatar name={tenancy.tenant.fullName} size="lg" />
+              <Avatar name={tenancy.tenant.fullName} uri={null} size="lg" />
               <View style={styles.tenantText}>
-                <Typography variant="bodyMedium" numberOfLines={1}>
+                <Typography variant="h3" numberOfLines={1}>
                   {tenancy.tenant.fullName}
                 </Typography>
                 <Typography variant="caption" color="textSecondary">
-                  {tenancy.tenant.phone}
-                </Typography>
-                <Typography variant="small" colorValue={colors.primary}>
-                  View full profile
+                  {tenancy.tenant.phone} · since {formatFullDate(tenancy.checkInDate)}
                 </Typography>
               </View>
               <Icon name="chevron-right" size={22} color={colors.textTertiary} />
             </Pressable>
 
-            <Divider verticalSpacing="xs" />
-
-            {/* Tenancy facts */}
-            <InfoRow label="Monthly rent" value={`${formatINR(tenancy.monthlyRent)}/mo`} />
-            {tenancy.maintenanceCharge > 0 && (
-              <InfoRow label="Maintenance" value={`${formatINR(tenancy.maintenanceCharge)}/mo`} />
-            )}
-            <InfoRow
-              label="Security deposit"
-              value={tenancy.securityDeposit ? formatINR(tenancy.securityDeposit) : 'Not set'}
-            />
-            <InfoRow label="Check-in" value={formatFullDate(tenancy.checkInDate)} />
-            <View style={styles.infoRow}>
-              <Typography variant="caption" color="textSecondary">
-                This cycle
+            {/* This month */}
+            <View style={styles.month}>
+              <View style={styles.monthTop}>
+                <Typography variant="overline" color="textSecondary">
+                  {formatMonthYear(new Date())}
+                </Typography>
+                <View style={styles.badges}>
+                  <StatusBadge meta={COLLECTION_STATE_META[tenancy.state]} size="sm" />
+                  {tenancy.paymentStatus === 'OVERDUE' && (
+                    <StatusBadge meta={PAYMENT_STATUS_META.OVERDUE} size="sm" tinted />
+                  )}
+                </View>
+              </View>
+              <Typography variant="h2" style={styles.tabular}>
+                {formatINR(tenancy.collectedPaise)}{' '}
+                <Typography variant="caption" color="textSecondary">
+                  of {formatINR(tenancy.duePaise)} collected
+                </Typography>
               </Typography>
-              <StatusBadge meta={PAYMENT_STATUS_META[tenancy.paymentStatus]} size="sm" />
+              <ProgressBar
+                pct={collectedPct}
+                color={tenancy.state === 'PAID' ? colors.success : colors.chart1}
+              />
             </View>
 
-            {/* Notice */}
+            <View style={styles.facts}>
+              <KeyValue label="Monthly rent" value={`${formatINR(tenancy.monthlyRent)}/mo`} />
+              {tenancy.maintenanceCharge > 0 && (
+                <KeyValue
+                  label="Maintenance"
+                  value={`${formatINR(tenancy.maintenanceCharge)}/mo`}
+                  divider
+                />
+              )}
+              <KeyValue
+                label="Security deposit"
+                value={tenancy.securityDeposit ? formatINR(tenancy.securityDeposit) : 'Not set'}
+                divider
+              />
+            </View>
+
             {tenancy.noticeGivenDate && tenancy.expectedLeavingDate ? (
               <View style={styles.noticeBox}>
                 <Icon name="calendar-alert" size={16} color={colors.warning} />
-                <Typography variant="small" colorValue={colors.warning} style={styles.noticeText}>
+                <Typography variant="small" style={styles.noticeText}>
                   Notice given {formatFullDate(tenancy.noticeGivenDate)} — vacating by{' '}
-                  {formatFullDate(tenancy.expectedLeavingDate)}.
+                  <Typography variant="smallMedium">
+                    {formatFullDate(tenancy.expectedLeavingDate)}
+                  </Typography>
+                  .
                 </Typography>
               </View>
             ) : null}
 
             {/* Actions */}
             <View style={styles.actions}>
-              {tenancy.paymentStatus !== 'PAID' && (
-                <Button
-                  title={`Mark Paid — ${formatINR(currentCycleDuePaise(tenancy))}`}
-                  icon="check-circle-outline"
-                  onPress={() => setMarkPaidOpen(true)}
-                />
-              )}
               <Button
-                title="Send invoice"
-                icon="receipt"
-                variant="secondary"
-                onPress={() => setInvoiceOpen(true)}
+                title={
+                  tenancy.state === 'PAID'
+                    ? 'Collect rent'
+                    : `Collect rent · ${formatINR(tenancy.duePaise - tenancy.collectedPaise)} due`
+                }
+                icon="cash-plus"
+                onPress={() => setCollectOpen(true)}
               />
-              {!tenancy.noticeGivenDate && (
+              <View style={styles.actionRow}>
                 <Button
-                  title="Record notice"
-                  icon="calendar-clock"
+                  title="Send invoice"
+                  icon="receipt"
                   variant="outline"
-                  onPress={() => setNoticeConfirmOpen(true)}
+                  style={styles.flex}
+                  onPress={() => setInvoiceOpen(true)}
                 />
-              )}
+                {!tenancy.noticeGivenDate && (
+                  <Button
+                    title="Record notice"
+                    icon="calendar-clock"
+                    variant="outline"
+                    style={styles.flex}
+                    onPress={() => setNoticeConfirmOpen(true)}
+                  />
+                )}
+              </View>
               <Button
                 title={isFlat ? 'Vacate flat' : 'Vacate bed'}
                 icon="exit-to-app"
-                variant="outline"
+                variant="ghost"
+                textColor={colors.error}
                 onPress={() => setVacateConfirmOpen(true)}
               />
             </View>
@@ -178,13 +226,10 @@ export function BedSheet({ bed, roomNumber, isFlat, visible, onClose }: BedSheet
       {/* Flows */}
       {tenancy && (
         <>
-          <MarkPaidFlow
-            visible={markPaidOpen}
+          <CollectRentSheet
+            visible={collectOpen}
             tenancyId={tenancy.id}
-            tenantName={tenancy.tenant.fullName}
-            amountPaise={currentCycleDuePaise(tenancy)}
-            isFlat={isFlat}
-            onClose={() => setMarkPaidOpen(false)}
+            onClose={() => setCollectOpen(false)}
           />
           <SendInvoiceSheet
             visible={invoiceOpen}
@@ -221,26 +266,17 @@ export function BedSheet({ bed, roomNumber, isFlat, visible, onClose }: BedSheet
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Typography variant="caption" color="textSecondary">
-        {label}
-      </Typography>
-      <Typography variant="captionMedium">{value}</Typography>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   body: {
-    gap: spacing.sm + 2,
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
   },
   tenantRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
   },
   pressed: {
     opacity: 0.7,
@@ -249,11 +285,26 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  infoRow: {
+  month: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.canvas,
+  },
+  monthTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingVertical: 3,
+  },
+  badges: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  tabular: {
+    fontVariant: ['tabular-nums'],
+  },
+  facts: {
+    paddingHorizontal: 2,
   },
   noticeBox: {
     flexDirection: 'row',
@@ -268,6 +319,13 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  flex: {
+    flex: 1,
   },
 });

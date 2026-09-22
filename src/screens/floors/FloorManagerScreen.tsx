@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View, StyleSheet } from 'react-native';
+import { RefreshControl, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import {
   EmptyState,
   FilterChips,
+  LargeTitle,
   RoomCard,
   Screen,
+  SegmentedControl,
   Skeleton,
+  TopBar,
   Typography,
   enterItem,
+  useScrollHeader,
 } from '@/components';
-import { BED_VISUAL_STATUSES, BED_VISUAL_STATUS_META } from '@/constants';
+import { BED_VISUAL_STATUSES, BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import { useFloorLayout, useFloorNavigation } from '@/hooks';
-import type { FloorBed } from '@/mocks';
 import { useActiveProperty } from '@/store';
-import { colors, fontFamilies, spacing } from '@/theme';
-import { TabHeader } from '../shared/TabHeader';
+import { borderRadius, colors, fontFamilies, spacing, GUTTER } from '@/theme';
 import { BedSheet } from './BedSheet';
 
 const GRID_COLUMNS = 3;
@@ -25,16 +27,17 @@ const GRID_COLUMNS = 3;
 /**
  * FloorManagerScreen
  *
- * The web Floor Manager redesigned for touch: block chips (only when the
- * property has more than one block — the web rule), floor chips, then the
- * room grid with per-bed status dots. Tapping a room opens its bed view;
- * flat properties skip straight to the unit sheet since a "room" has exactly
- * one bed.
+ * The web Floor Manager for touch: block selector (only with more than one
+ * block — the web rule), floor chips, a live legend of the floor's bed states
+ * and the room grid with one status dot per bed. Tapping a room opens its
+ * beds; flat properties open the unit sheet directly. The web floor banner's
+ * giant numeral sits behind the grid as a ghost.
  */
 export function FloorManagerScreen() {
   const router = useRouter();
   const property = useActiveProperty();
   const { data: nav, isLoading: navLoading } = useFloorNavigation(property.id);
+  const { scrollY, onScroll } = useScrollHeader();
 
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
@@ -49,8 +52,7 @@ export function FloorManagerScreen() {
   const selectionValid = floors.some((floor) => floor.id === selectedFloorId);
 
   // (Re)initialise to the first block/floor whenever the current selection
-  // stops being valid — first load and property switches — while leaving a
-  // valid selection untouched across silent data refreshes.
+  // stops being valid — first load and property switches.
   useEffect(() => {
     if (!nav || selectionValid) return;
     if (nav.hasBlocks) {
@@ -63,22 +65,16 @@ export function FloorManagerScreen() {
     }
   }, [nav, selectionValid]);
 
-  const {
-    data: rooms,
-    isLoading: layoutLoading,
-    isRefreshing,
-    refresh,
-  } = useFloorLayout(selectedFloorId);
+  const { data: rooms, isLoading: layoutLoading, isRefreshing, refresh } =
+    useFloorLayout(selectedFloorId);
 
-  // Bed sheet (flat properties open it straight from the room tile).
+  // Flat properties open the unit sheet straight from the tile.
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [sheetBed, setSheetBed] = useState<FloorBed | null>(null);
-  const [sheetRoomNumber, setSheetRoomNumber] = useState('');
+  const [sheetRoomId, setSheetRoomId] = useState<string | null>(null);
+  const sheetRoom = rooms?.find((r) => r.id === sheetRoomId) ?? null;
 
-  // Only surface the block selector when there is a genuine choice.
   const showBlocks = Boolean(nav?.hasBlocks && nav.blocks.length > 1);
 
-  // The web floor banner's number treatment: basements read B1, B2…
   const activeFloor = floors.find((floor) => floor.id === selectedFloorId) ?? null;
   const floorGhostLabel =
     activeFloor === null
@@ -87,32 +83,33 @@ export function FloorManagerScreen() {
         ? `B${Math.abs(activeFloor.number)}`
         : String(activeFloor.number).padStart(2, '0');
 
-  const occupiedCount = useMemo(
-    () =>
-      (rooms ?? []).reduce(
-        (sum, room) => sum + room.beds.filter((bed) => bed.status === 'OCCUPIED').length,
-        0,
-      ),
-    [rooms],
-  );
-  const bedCount = useMemo(
-    () => (rooms ?? []).reduce((sum, room) => sum + room.beds.length, 0),
-    [rooms],
-  );
+  const stats = useMemo(() => {
+    const counts = { paid: 0, pending: 0, overdue: 0, vacant: 0 };
+    let beds = 0;
+    for (const room of rooms ?? []) {
+      for (const bed of room.beds) {
+        counts[bedVisualStatus(bed)] += 1;
+        beds += 1;
+      }
+    }
+    return { counts, beds, occupied: beds - counts.vacant };
+  }, [rooms]);
 
-  // Pad the last grid row so cards keep equal widths.
   const gridRows = useMemo(() => {
     const list = rooms ?? [];
     const chunks: (typeof list)[] = [];
-    for (let i = 0; i < list.length; i += GRID_COLUMNS) {
-      chunks.push(list.slice(i, i + GRID_COLUMNS));
-    }
+    for (let i = 0; i < list.length; i += GRID_COLUMNS) chunks.push(list.slice(i, i + GRID_COLUMNS));
     return chunks;
   }, [rooms]);
 
+  const blockOptions = nav?.blocks.map((b) => ({ value: b.id, label: `Block ${b.name}` })) ?? [];
+
   return (
-    <Screen edges={['top']} padded={false} keyboardAvoiding={false}>
-      <ScrollView
+    <Screen edges={['top']} padded={false} keyboardAvoiding={false} background={colors.canvas}>
+      <TopBar title="Floor Manager" scrollY={scrollY} />
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -124,31 +121,49 @@ export function FloorManagerScreen() {
           />
         }
       >
-        <TabHeader title="Floor Manager" />
+        <LargeTitle
+          title="Floor Manager"
+          subtitle={
+            rooms && activeFloor
+              ? `${activeFloor.name ?? `Floor ${activeFloor.number}`} · ${rooms.length} ${property.isFlat ? 'flats' : 'rooms'} · ${stats.occupied}/${stats.beds} occupied`
+              : 'Rooms and beds, floor by floor.'
+          }
+          scrollY={scrollY}
+        />
 
         {navLoading || !nav ? (
           <View style={styles.skeletons}>
-            <Skeleton height={36} radius={18} />
-            <Skeleton height={220} radius={12} />
+            <Skeleton height={34} radius={17} width="70%" />
+            <Skeleton height={240} radius={borderRadius.lg} />
           </View>
         ) : (
           <View style={styles.body}>
-            {showBlocks && (
-              <FilterChips
-                options={nav.blocks.map((block) => ({
-                  value: block.id,
-                  label: `Block ${block.name}`,
-                }))}
-                value={selectedBlockId ?? ''}
-                onChange={(blockId) => {
-                  setSelectedBlockId(blockId);
-                  const block = nav.blocks.find((b) => b.id === blockId);
-                  setSelectedFloorId(block?.floors[0]?.id ?? null);
-                }}
-              />
-            )}
+            {showBlocks &&
+              (blockOptions.length <= 4 ? (
+                <SegmentedControl
+                  options={blockOptions}
+                  value={selectedBlockId ?? ''}
+                  onChange={(blockId) => {
+                    setSelectedBlockId(blockId);
+                    const block = nav.blocks.find((b) => b.id === blockId);
+                    setSelectedFloorId(block?.floors[0]?.id ?? null);
+                  }}
+                />
+              ) : (
+                <FilterChips
+                  inset={GUTTER}
+                  options={blockOptions}
+                  value={selectedBlockId ?? ''}
+                  onChange={(blockId) => {
+                    setSelectedBlockId(blockId);
+                    const block = nav.blocks.find((b) => b.id === blockId);
+                    setSelectedFloorId(block?.floors[0]?.id ?? null);
+                  }}
+                />
+              ))}
 
             <FilterChips
+              inset={GUTTER}
               options={floors.map((floor) => ({
                 value: floor.id,
                 label: floor.name ?? `Floor ${floor.number}`,
@@ -157,18 +172,18 @@ export function FloorManagerScreen() {
               onChange={setSelectedFloorId}
             />
 
-            {/* Legend */}
+            {/* Legend — generated from the same map the dots use (web WIP). */}
             <View style={styles.legend}>
               {BED_VISUAL_STATUSES.map((status) => (
                 <View key={status} style={styles.legendItem}>
                   <View
-                    style={[
-                      styles.legendDot,
-                      { backgroundColor: BED_VISUAL_STATUS_META[status].color },
-                    ]}
+                    style={[styles.legendDot, { backgroundColor: BED_VISUAL_STATUS_META[status].color }]}
                   />
                   <Typography variant="small" color="textSecondary">
                     {BED_VISUAL_STATUS_META[status].label}
+                    {rooms ? (
+                      <Typography variant="smallMedium"> {stats.counts[status]}</Typography>
+                    ) : null}
                   </Typography>
                 </View>
               ))}
@@ -176,25 +191,21 @@ export function FloorManagerScreen() {
 
             {layoutLoading || !selectionValid ? (
               <View style={styles.skeletons}>
-                <Skeleton height={110} radius={12} />
-                <Skeleton height={110} radius={12} />
-                <Skeleton height={110} radius={12} />
+                {[0, 1, 2].map((i) => (
+                  <View key={i} style={styles.gridRow}>
+                    <Skeleton height={104} radius={borderRadius.lg} style={styles.flex} />
+                    <Skeleton height={104} radius={borderRadius.lg} style={styles.flex} />
+                    <Skeleton height={104} radius={borderRadius.lg} style={styles.flex} />
+                  </View>
+                ))}
               </View>
             ) : (rooms ?? []).length === 0 ? (
               <EmptyState icon="door" title="No rooms on this floor yet." />
             ) : (
               // Keyed by floor so switching floors replays the entrance.
-              <View key={selectedFloorId ?? 'none'} style={styles.grid}>
-                <Typography variant="small" color="textTertiary">
-                  {(rooms ?? []).length} {property.isFlat ? 'flats' : 'rooms'} · {occupiedCount}/
-                  {bedCount} occupied
-                </Typography>
+              <Animated.View key={selectedFloorId ?? 'none'} entering={FadeIn.duration(160)} style={styles.grid}>
                 {gridRows.map((row, rowIndex) => (
-                  <Animated.View
-                    key={rowIndex}
-                    entering={enterItem(rowIndex)}
-                    style={styles.gridRow}
-                  >
+                  <Animated.View key={rowIndex} entering={enterItem(rowIndex, 40)} style={styles.gridRow}>
                     {row.map((room) => (
                       <RoomCard
                         key={room.id}
@@ -202,37 +213,35 @@ export function FloorManagerScreen() {
                         isFlat={property.isFlat}
                         onPress={() => {
                           if (property.isFlat && room.beds[0]) {
-                            setSheetBed(room.beds[0]);
-                            setSheetRoomNumber(room.number);
+                            setSheetRoomId(room.id);
                             setSheetOpen(true);
                           } else {
-                            router.push(`/(main)/rooms/${room.id}` as any);
+                            router.push(`/(main)/rooms/${room.id}` as never);
                           }
                         }}
                       />
                     ))}
                     {row.length < GRID_COLUMNS &&
                       Array.from({ length: GRID_COLUMNS - row.length }, (_, i) => (
-                        <View key={`pad-${i}`} style={styles.gridSpacer} />
+                        <View key={`pad-${i}`} style={styles.flex} />
                       ))}
                   </Animated.View>
                 ))}
 
-                {/* The web floor banner's giant floor number, as a ghost. */}
                 <View style={styles.floorGhostRow} pointerEvents="none">
                   <Typography aria-hidden style={styles.floorGhost}>
                     {floorGhostLabel}
                   </Typography>
                 </View>
-              </View>
+              </Animated.View>
             )}
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
 
       <BedSheet
-        bed={sheetBed}
-        roomNumber={sheetRoomNumber}
+        bed={sheetRoom?.beds[0] ?? null}
+        roomNumber={sheetRoom?.number ?? ''}
         isFlat={property.isFlat}
         visible={sheetOpen}
         onClose={() => setSheetOpen(false)}
@@ -243,24 +252,25 @@ export function FloorManagerScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingBottom: spacing.xxl,
   },
   body: {
     gap: spacing.md,
   },
   skeletons: {
-    gap: spacing.md,
+    gap: spacing.sm + 4,
   },
   legend: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.md,
+    columnGap: spacing.md,
+    rowGap: 6,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
   legendDot: {
     width: 8,
@@ -274,20 +284,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm + 4,
   },
-  gridSpacer: {
+  flex: {
     flex: 1,
   },
   floorGhostRow: {
     alignItems: 'flex-end',
-    marginTop: -spacing.sm,
+    marginTop: -spacing.xs,
     marginRight: -spacing.xs,
   },
   floorGhost: {
-    fontSize: 128,
-    lineHeight: 128,
-    fontFamily: fontFamilies.bold,
-    letterSpacing: -6,
-    color: 'rgba(44, 48, 64, 0.06)',
+    fontSize: 132,
+    lineHeight: 132,
+    fontFamily: fontFamilies.extrabold,
+    letterSpacing: -7,
+    color: 'rgba(44, 48, 64, 0.05)',
     includeFontPadding: false,
   },
 });
