@@ -1,17 +1,16 @@
 import { useCallback } from 'react';
 import { View, FlatList, StyleSheet, Pressable } from 'react-native';
-import Animated from 'react-native-reanimated';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { Icon, type IconName } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { Typography } from '@/components/Typography';
-import { enterItem } from '@/components/motion';
+import { GroupedItem } from '@/components/GroupedItem';
 import { useNotifications, useAction } from '@/hooks';
 import { markAllNotificationsRead, markNotificationRead } from '@/mocks/actions';
 import { useActiveProperty } from '@/store';
-import { colors, spacing, borderRadius, fontFamilies } from '@/theme';
+import { colors, spacing, borderRadius, fontFamilies, GUTTER } from '@/theme';
 import { formatRelative } from '@/utils';
 import type { AppNotification } from '@/types';
 
@@ -85,16 +84,16 @@ export function NotificationsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: AppNotification; index: number }) => (
-      <Animated.View entering={enterItem(index)}>
+      <GroupedItem index={index} count={notifications.length} dividerInset={spacing.md + 38 + spacing.sm + 4}>
         <NotificationItem notification={item} onPress={() => handlePress(item)} />
-      </Animated.View>
+      </GroupedItem>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [notifications.length],
   );
 
   return (
-    <Screen edges={[]} padded={false}>
+    <Screen edges={[]} padded={false} background={colors.canvas}>
       {unreadCount > 0 && (
         <View style={styles.toolbar}>
           <Typography variant="caption" color="textSecondary">
@@ -128,42 +127,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
   list: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingTop: spacing.xs,
     paddingBottom: spacing.xxl,
-    gap: spacing.sm,
   },
   card: {
     flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 6,
     backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
   },
   cardUnread: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primaryLight,
+    backgroundColor: '#FBF9F5',
   },
   cardPressed: {
-    opacity: 0.8,
+    backgroundColor: colors.canvas,
   },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconBoxUnread: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.primaryLight,
   },
   body: {
     flex: 1,

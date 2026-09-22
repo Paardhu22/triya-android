@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
@@ -12,11 +11,11 @@ import { SearchBar } from '@/components/SearchBar';
 import { SkeletonCardList } from '@/components/Skeleton';
 import { Typography } from '@/components/Typography';
 import { ComplaintCard } from '@/components/cards/ComplaintCard';
-import { enterItem } from '@/components/motion';
+import { GroupedItem } from '@/components/GroupedItem';
 import { useComplaints } from '@/hooks';
 import type { ComplaintListItem } from '@/mocks';
 import { useActiveProperty } from '@/store';
-import { spacing } from '@/theme';
+import { colors, spacing, GUTTER } from '@/theme';
 import type { ComplaintPriority, ComplaintStatus } from '@/types';
 import { CreateComplaintSheet } from './CreateComplaintSheet';
 
@@ -67,21 +66,22 @@ export function ComplaintsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: ComplaintListItem; index: number }) => (
-      <Animated.View entering={enterItem(index)}>
+      <GroupedItem index={index} count={filtered.length}>
         <ComplaintCard
           complaint={item}
           onPress={() => router.push(`/(main)/complaints/${item.id}` as any)}
         />
-      </Animated.View>
+      </GroupedItem>
     ),
-    [router],
+    [router, filtered.length],
   );
 
   return (
-    <Screen edges={[]} padded={false}>
+    <Screen edges={[]} padded={false} background={colors.canvas}>
       <View style={styles.header}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search complaints" />
         <FilterChips
+          inset={GUTTER}
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
@@ -92,6 +92,7 @@ export function ComplaintsScreen() {
           ]}
         />
         <FilterChips
+          inset={GUTTER}
           value={priorityFilter}
           onChange={setPriorityFilter}
           options={[
@@ -150,19 +151,18 @@ export function ComplaintsScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
     gap: spacing.sm + 4,
   },
   skeletons: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     gap: spacing.sm,
   },
   list: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingBottom: spacing.xxl + 56,
-    gap: spacing.sm,
   },
   footerCount: {
     textAlign: 'center',

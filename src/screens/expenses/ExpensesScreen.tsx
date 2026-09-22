@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
@@ -12,11 +11,11 @@ import { SearchBar } from '@/components/SearchBar';
 import { SkeletonCardList } from '@/components/Skeleton';
 import { Typography } from '@/components/Typography';
 import { ExpenseCard } from '@/components/cards/ExpenseCard';
-import { enterItem } from '@/components/motion';
+import { GroupedItem } from '@/components/GroupedItem';
 import { useExpenseCategories, useExpenses } from '@/hooks';
 import type { ExpenseListItem } from '@/mocks';
 import { useActiveProperty } from '@/store';
-import { colors, spacing } from '@/theme';
+import { colors, spacing, GUTTER } from '@/theme';
 import { formatINR } from '@/utils';
 import { AddExpenseSheet } from './AddExpenseSheet';
 
@@ -65,21 +64,22 @@ export function ExpensesScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: ExpenseListItem; index: number }) => (
-      <Animated.View entering={enterItem(index)}>
+      <GroupedItem index={index} count={filtered.length} dividerInset={spacing.md + 38 + spacing.sm + 4}>
         <ExpenseCard
           expense={item}
           onPress={() => router.push(`/(main)/expenses/${item.id}` as any)}
         />
-      </Animated.View>
+      </GroupedItem>
     ),
-    [router],
+    [router, filtered.length],
   );
 
   return (
-    <Screen edges={[]} padded={false}>
+    <Screen edges={[]} padded={false} background={colors.canvas}>
       <View style={styles.header}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search vendor or notes" />
         <FilterChips
+          inset={GUTTER}
           value={categoryId}
           onChange={setCategoryId}
           options={[
@@ -139,7 +139,7 @@ export function ExpensesScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
     gap: spacing.sm + 4,
@@ -150,12 +150,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   skeletons: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     gap: spacing.sm,
   },
   list: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: GUTTER,
     paddingBottom: spacing.xxl + 56,
-    gap: spacing.sm,
   },
 });
