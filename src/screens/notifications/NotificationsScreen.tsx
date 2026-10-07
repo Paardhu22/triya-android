@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   cardUnread: {
-    backgroundColor: '#FBF9F5',
+    backgroundColor: '#F7F8FC',
   },
   cardPressed: {
     backgroundColor: colors.canvas,

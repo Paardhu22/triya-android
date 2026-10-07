@@ -35,7 +35,7 @@ const PAD = 3;
 /**
  * SegmentedControl component.
  *
- * Equal-width segments on a warm track with a white thumb that glides to the
+ * Equal-width segments on a pill track with a white thumb that glides to the
  * selection — the web's shadcn `TabsList`, made tactile. For 2–4 mutually
  * exclusive choices (tabs within a screen, payment method…).
  */
@@ -96,8 +96,10 @@ export function SegmentedControl<T extends string>({
 const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
-    backgroundColor: colors.surfacePressed,
-    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: borderRadius.full,
     padding: PAD,
   },
   thumb: {
@@ -105,7 +107,7 @@ const styles = StyleSheet.create({
     top: PAD,
     bottom: PAD,
     left: PAD,
-    borderRadius: borderRadius.md - 2,
+    borderRadius: borderRadius.full,
     backgroundColor: colors.background,
     ...elevation.xs,
   },

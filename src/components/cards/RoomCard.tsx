@@ -4,7 +4,7 @@ import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import type { FloorRoom } from '@/mocks';
-import { colors, spacing, borderRadius, elevation } from '@/theme';
+import { colors, fontFamilies, spacing, borderRadius, elevation } from '@/theme';
 
 export interface RoomCardProps {
   room: FloorRoom;
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
   number: {
     fontSize: 20,
     lineHeight: 24,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: fontFamilies.bold,
     letterSpacing: -0.4,
     color: colors.text,
     fontVariant: ['tabular-nums'],

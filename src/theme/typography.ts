@@ -1,11 +1,10 @@
 /**
  * Triya Manager -- Typography Scale
  *
- * Inter — the web app's font since its Swiss redesign — for all text. Figures
- * use Inter's tabular numerals (the web's `tabular-nums`), and display sizes
- * are tightened exactly like the web's headings (-0.035em page titles,
- * -0.015em dialog titles). Uppercase section kickers use the web's
- * `text-xs font-semibold tracking-wider uppercase` treatment.
+ * Manrope — the web app's font since its Portfolio2 refresh — for all text.
+ * Figures use tabular numerals (the web's `tabular-nums`). Headings are
+ * semibold and tightened like the web (-0.045em page titles, -0.04em stat
+ * figures); labels are sentence case `text-xs font-medium`, no uppercase.
  *
  * Each weight is a separate font family (how expo-google-fonts registers
  * static fonts), so variants set `fontFamily` and never `fontWeight` —
@@ -15,35 +14,35 @@
 import { Platform, type TextStyle } from 'react-native';
 
 export const fontFamilies = {
-  regular: 'Inter_400Regular',
-  medium: 'Inter_500Medium',
-  semibold: 'Inter_600SemiBold',
-  bold: 'Inter_700Bold',
-  extrabold: 'Inter_800ExtraBold',
+  regular: 'Manrope_400Regular',
+  medium: 'Manrope_500Medium',
+  semibold: 'Manrope_600SemiBold',
+  bold: 'Manrope_700Bold',
+  extrabold: 'Manrope_800ExtraBold',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }),
 } as const;
 
 const tabular: TextStyle['fontVariant'] = ['tabular-nums'];
 
 export const typography = {
-  /** Page title — the web PageHeader (2.125rem, -0.035em). */
+  /** Page title — the web PageHeader (1.75rem semibold, -0.045em). */
   display: {
-    fontSize: 32,
-    lineHeight: 38,
-    fontFamily: fontFamilies.bold,
-    letterSpacing: -1.1,
+    fontSize: 28,
+    lineHeight: 36,
+    fontFamily: fontFamilies.semibold,
+    letterSpacing: -1.25,
   },
   h1: {
     fontSize: 26,
     lineHeight: 32,
-    fontFamily: fontFamilies.bold,
-    letterSpacing: -0.7,
+    fontFamily: fontFamilies.semibold,
+    letterSpacing: -1,
   },
   h2: {
     fontSize: 20,
     lineHeight: 26,
-    fontFamily: fontFamilies.bold,
-    letterSpacing: -0.35,
+    fontFamily: fontFamilies.semibold,
+    letterSpacing: -0.5,
   },
   h3: {
     fontSize: 17,
@@ -95,20 +94,25 @@ export const typography = {
     fontFamily: fontFamilies.semibold,
     letterSpacing: -0.1,
   },
-  /** Uppercase section kickers — the web's "CAPACITY OVERVIEW" labels. */
+  /** Small labels — the web's sentence-case `text-xs font-medium` (StatCard label). */
   overline: {
-    fontSize: 11,
-    lineHeight: 14,
-    fontFamily: fontFamilies.semibold,
-    letterSpacing: 0.9,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: fontFamilies.medium,
   },
-  /** Big stat figure (web StatCard value, 1.85rem bold tight). */
+  /** Section heading — the web's `text-sm font-semibold tracking-[-0.015em]`. */
+  section: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: fontFamilies.semibold,
+    letterSpacing: -0.2,
+  },
+  /** Big stat figure (web StatCard value, 2rem semibold, -0.04em). */
   figure: {
-    fontSize: 26,
-    lineHeight: 30,
-    fontFamily: fontFamilies.bold,
-    letterSpacing: -0.8,
+    fontSize: 28,
+    lineHeight: 32,
+    fontFamily: fontFamilies.semibold,
+    letterSpacing: -1.1,
     fontVariant: tabular,
   },
   /** Inline money / counts (web `tabular-nums`). */

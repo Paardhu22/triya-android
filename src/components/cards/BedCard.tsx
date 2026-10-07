@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: colors.background,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(44, 48, 64, 0.08)',
+    borderColor: 'rgba(40, 43, 48, 0.08)',
   },
   pillowText: {
     color: colors.text,

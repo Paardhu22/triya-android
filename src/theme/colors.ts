@@ -1,9 +1,9 @@
 /**
  * Triya Manager -- Color Tokens
  *
- * Light-mode-only palette ported from the web app (globals.css). Warm,
- * strict, neutral "Swiss / International Typographic" scheme: white
- * surfaces, ink foreground, warm tan hairlines, restrained status tones.
+ * Light-mode-only palette ported from the web app (globals.css). The
+ * Portfolio2-inspired scheme: near-white canvas, cool grey panels, a
+ * restrained blue accent and quiet status tones.
  *
  * Mobile adaptation: screens sit on the web's `--main-surface` canvas and
  * group content on white surfaces, so sections separate by tone and hairline
@@ -12,23 +12,22 @@
 
 export const colors = {
   // Backgrounds
-  background: '#FFFFFF',
+  background: '#FFFFFF', // web --card
   /** Screen canvas behind grouped surfaces (web --main-surface). */
-  canvas: '#F5F5F3',
-  surface: '#F5F5F3', // web --muted
-  surfacePressed: '#EFEAE2', // web --hover / --accent
+  canvas: '#F3F4F6',
+  surface: '#F3F4F6', // web --muted
+  surfacePressed: '#ECEEF4', // web --hover / --accent
 
   // Text
-  text: '#2C3040', // web --foreground
-  textSecondary: '#6B7280', // web --muted-foreground
-  textTertiary: '#9CA3AF',
+  text: '#282B30', // web --foreground
+  textSecondary: '#666B75', // web --muted-foreground
+  textTertiary: '#9A9FA9',
   textInverse: '#FFFFFF',
 
-  // Brand — the ink itself is the primary, exactly like the web app.
-  primary: '#2C3040',
-  primaryLight: '#EFEAE2', // web --accent, behind selected/active elements
-  primaryDark: '#20242F', // pressed state of primary surfaces
-  sand: '#D8CEBF', // web --secondary-surface
+  // Brand — the web's restrained blue accent.
+  primary: '#3F5DC6',
+  primaryLight: '#DFE6FF', // web --grid-accent / ::selection, behind selected elements
+  primaryDark: '#2A439C', // web --primary-hover, pressed state of primary surfaces
 
   // Semantic (web --available / --partial / --occupied + soft tints)
   success: '#4D8A4C',
@@ -40,18 +39,18 @@ export const colors = {
   neutral: '#9CA3AF', // web status neutral
   neutralLight: '#F1F2F4',
 
-  // Borders & Dividers (web --border / --ring)
-  border: '#E5DED4',
-  borderLight: '#EEE9E1',
-  divider: '#EAE4DA',
-  ring: '#D8CEBF',
+  // Borders & Dividers (web --border / --input / --ring)
+  border: '#E7E8EC',
+  borderLight: '#EEEFF2',
+  divider: '#E7E8EC',
+  ring: '#D4D6DD', // web --input; focus uses primary like the web --ring
 
-  // Muted, on-brand data colours (web --chart-1..5)
-  chart1: '#2C3040',
-  chart2: '#6B7280',
-  chart3: '#8A8F9C',
-  chart4: '#D8CEBF',
-  chart5: '#C84B4B',
+  // Blue carries the main series; secondary data stays quiet (web --chart-1..5)
+  chart1: '#3F5DC6',
+  chart2: '#858B97',
+  chart3: '#B4BAC8',
+  chart4: '#DFE6FF',
+  chart5: '#C4777D',
 
   // Floor Manager bed-status accents. Kept distinct from the semantic tones
   // above (used app-wide) — these are the exact web --bed-* tones, scoped to
@@ -66,8 +65,8 @@ export const colors = {
   bedOverdueSoft: 'rgba(239, 68, 68, 0.10)',
 
   // Overlays
-  overlay: 'rgba(28, 31, 42, 0.42)',
-  shadow: '#2C3040',
+  overlay: 'rgba(28, 30, 34, 0.42)',
+  shadow: '#282B30',
 } as const;
 
 export type ColorToken = keyof typeof colors;

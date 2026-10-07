@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     lineHeight: 132,
     fontFamily: fontFamilies.extrabold,
     letterSpacing: -7,
-    color: 'rgba(44, 48, 64, 0.05)',
+    color: 'rgba(40, 43, 48, 0.05)',
     includeFontPadding: false,
   },
 });

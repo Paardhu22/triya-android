@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Pressable, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Typography } from '@/components/Typography';
-import { colors, spacing } from '@/theme';
+import { colors, fontFamilies, spacing } from '@/theme';
 
 export interface SectionHeaderProps {
   /** Uppercase kicker — the web's "CAPACITY OVERVIEW" section label. */
@@ -41,7 +41,7 @@ export function SectionHeader({ title, meta, onMetaPress, subtitle, style }: Sec
   return (
     <View style={[styles.row, style]}>
       <View style={styles.title}>
-        <Typography variant="overline" color="textSecondary" numberOfLines={1}>
+        <Typography variant="section" numberOfLines={1}>
           {title}
         </Typography>
         {subtitle ? (
@@ -76,6 +76,6 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   link: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: fontFamilies.semibold,
   },
 });

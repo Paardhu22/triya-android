@@ -18,8 +18,8 @@ import { colors, spacing, borderRadius } from '@/theme';
 /**
  * SelectPropertyScreen
  *
- * Post-login property choice (mirrors the web /select-property page: ink
- * backdrop, sand overline, white headline, white property cards).
+ * Post-login property choice (mirrors the web /select-property page: light
+ * canvas, blue overline, ink headline, white property cards).
  * Managers scoped to one property never see this — PropertyProvider
  * auto-selects for them; admins choose which PG to manage and can switch
  * later from the dashboard header.
@@ -30,16 +30,16 @@ export function SelectPropertyScreen() {
   const { properties, selectProperty } = useProperty();
 
   return (
-    <Screen scrollable background={colors.primary}>
+    <Screen scrollable background={colors.canvas}>
       <View style={styles.container}>
         <Animated.View entering={enterHeader()} style={styles.header}>
-          <Typography variant="overline" colorValue={colors.sand}>
+          <Typography variant="overline" color="primary">
             Triya Manager
           </Typography>
-          <Typography variant="h1" colorValue={colors.textInverse} style={styles.headline}>
+          <Typography variant="h1" style={styles.headline}>
             Select a property
           </Typography>
-          <Typography variant="caption" colorValue="rgba(255, 255, 255, 0.6)">
+          <Typography variant="caption" color="textSecondary">
             Choose which PG you want to manage. You can switch anytime from the
             dashboard header.
           </Typography>
@@ -49,7 +49,7 @@ export function SelectPropertyScreen() {
           <Animated.View entering={enterItem(0)} style={styles.emptyBox}>
             <Typography
               variant="caption"
-              colorValue="rgba(255, 255, 255, 0.6)"
+              color="textSecondary"
               style={styles.emptyText}
             >
               No properties are available for your account. Contact an
@@ -74,7 +74,7 @@ export function SelectPropertyScreen() {
         )}
 
         <Animated.View entering={enterUp(160)} style={styles.footer}>
-          <Typography variant="caption" colorValue="rgba(255, 255, 255, 0.6)">
+          <Typography variant="caption" color="textSecondary">
             Signed in as {user?.name ?? '—'}
           </Typography>
           <Button
@@ -82,8 +82,6 @@ export function SelectPropertyScreen() {
             variant="outline"
             size="sm"
             icon="logout"
-            style={styles.signOut}
-            textColor={colors.textInverse}
             onPress={() => {
               signOut();
               router.replace('/(auth)/login' as any);
@@ -116,8 +114,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   emptyText: {
     textAlign: 'center',
@@ -126,8 +124,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  signOut: {
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
 });

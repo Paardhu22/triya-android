@@ -15,14 +15,13 @@ import {
 } from '@/components';
 import { listLoginUsers, type LoginUser } from '@/mocks';
 import { useAuth } from '@/store';
-import { colors, fontFamilies, spacing, borderRadius } from '@/theme';
+import { colors, fontFamilies, spacing, borderRadius, elevation } from '@/theme';
 
 /**
  * LoginScreen
  *
- * The mobile take on the web login page: the ink backdrop and editorial
- * hero (overline, headline, ghost "PG" glyph) above the white sign-in
- * card. Same workflow as login-form.tsx — pick a staff account, enter the
+ * The mobile take on the web login page: the soft brand panel (overline,
+ * headline, ghost "PG" glyph) above the bordered white sign-in card. Same workflow as login-form.tsx — pick a staff account, enter the
  * password, sign in. Property selection happens after auth, exactly as on
  * the web.
  *
@@ -56,30 +55,30 @@ export function LoginScreen() {
   }
 
   return (
-    <Screen scrollable background={colors.primary}>
+    <Screen scrollable background={colors.canvas}>
       <View style={styles.container}>
-        {/* Editorial hero — the web's sand-panel composition on ink */}
+        {/* Brand panel — the web's soft muted panel */}
         <Animated.View entering={enterHeader()} style={styles.hero}>
           <Typography
             aria-hidden
             variant="h1"
-            colorValue="rgba(255, 255, 255, 0.05)"
+            colorValue="rgba(63, 93, 198, 0.05)"
             style={styles.ghost}
           >
             PG
           </Typography>
-          <Typography variant="overline" colorValue={colors.sand}>
+          <Typography variant="overline" color="textSecondary">
             Property Manager
           </Typography>
-          <Typography variant="h1" colorValue={colors.textInverse} style={styles.headline}>
+          <Typography variant="h1" style={styles.headline}>
             Triya{'\n'}Manager
           </Typography>
           <Typography
             variant="caption"
-            colorValue="rgba(255, 255, 255, 0.7)"
+            color="textSecondary"
             style={styles.tagline}
           >
-            Rooms, beds, tenants and payments — organized on one precise grid.
+            Rooms, beds, tenants and payments — organized in one place.
           </Typography>
         </Animated.View>
 
@@ -214,7 +213,8 @@ const styles = StyleSheet.create({
   },
   headline: {
     fontSize: 36,
-    lineHeight: 38,
+    lineHeight: 42,
+    letterSpacing: -1.6,
     marginTop: spacing.md,
   },
   tagline: {
@@ -225,7 +225,10 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.background,
     borderRadius: borderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     padding: spacing.lg,
+    ...elevation.sm,
   },
   cardSubtitle: {
     marginTop: spacing.xs,

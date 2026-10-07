@@ -26,7 +26,7 @@ export interface ProgressBarProps {
  */
 export function ProgressBar({
   pct,
-  color = 'rgba(44, 48, 64, 0.62)',
+  color = 'rgba(40, 43, 48, 0.62)',
   trackColor = colors.surfacePressed,
   height = 5,
   delay = 80,

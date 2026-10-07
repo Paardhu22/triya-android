@@ -31,15 +31,15 @@ const FONT_SIZE: Record<AvatarSize, number> = {
 
 /**
  * Soft, readable tints cycled deterministically per name — restricted to the
- * app's warm palette family so avatars never introduce off-brand hues.
+ * app's palette family so avatars never introduce off-brand hues.
  */
 const TINTS = [
-  { background: '#EFEAE2', text: '#7A5C3E' }, // warm tan
+  { background: '#DFE6FF', text: '#2A439C' }, // blue
   { background: '#E6EFE5', text: '#4D8A4C' }, // sage
   { background: '#FEF3C7', text: '#B45309' }, // amber
   { background: '#F6E4E1', text: '#A84343' }, // clay
-  { background: '#E8E9EF', text: '#2C3040' }, // ink
-  { background: '#F5F5F3', text: '#6B7280' }, // stone
+  { background: '#ECEEF4', text: '#282B30' }, // ink
+  { background: '#F3F4F6', text: '#666B75' }, // stone
 ] as const;
 
 function initialsOf(name: string): string {

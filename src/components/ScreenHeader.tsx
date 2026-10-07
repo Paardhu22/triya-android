@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Pressable, Text, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
   interpolate,
@@ -113,7 +113,7 @@ export interface LargeTitleProps {
 }
 
 /**
- * LargeTitle — the web PageHeader (2.125rem, -0.035em) at the top of the
+ * LargeTitle — the web PageHeader (title + blue period) at the top of the
  * scroll content. Lifts and fades as it scrolls under the TopBar.
  */
 export function LargeTitle({ title, subtitle, scrollY, right }: LargeTitleProps) {
@@ -133,6 +133,7 @@ export function LargeTitle({ title, subtitle, scrollY, right }: LargeTitleProps)
       <View style={styles.largeRow}>
         <Typography variant="display" numberOfLines={1} adjustsFontSizeToFit style={styles.largeText}>
           {title}
+          <Text style={styles.titleDot}>.</Text>
         </Typography>
         {right}
       </View>
@@ -217,5 +218,8 @@ const styles = StyleSheet.create({
   },
   largeText: {
     flexShrink: 1,
+  },
+  titleDot: {
+    color: colors.primary,
   },
 });

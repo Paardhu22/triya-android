@@ -137,9 +137,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   outline: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.ring,
   },
   outlineClear: {
     backgroundColor: 'transparent',

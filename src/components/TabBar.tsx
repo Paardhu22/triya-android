@@ -54,7 +54,7 @@ function TabItem({
         <Icon
           name={focused ? meta.activeIcon : meta.icon}
           size={22}
-          color={focused ? colors.text : colors.textTertiary}
+          color={focused ? colors.primary : colors.textTertiary}
         />
         {meta.badge ? (
           <View style={styles.badge}>
@@ -77,7 +77,7 @@ function TabItem({
 }
 
 /**
- * TabBar — the app's bottom navigation. A Material-3-style ink indicator
+ * TabBar — the app's bottom navigation. A Material-3-style blue-tint indicator
  * springs behind the active icon, selection ticks a haptic, and the bar sits
  * on white with a single hairline, matching the web's quiet sidebar.
  */
