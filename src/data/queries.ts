@@ -1,11 +1,4 @@
-/**
- * Read API over the mock database.
- *
- * Function names, scoping and returned shapes mirror the web app's
- * src/lib/queries layer so backend integration is a drop-in replacement:
- * every function here corresponds to a real server query.
- */
-
+/** Read-only view models derived from the authenticated server snapshot. */
 import type {
   AppNotification,
   Bed,
@@ -46,32 +39,12 @@ import {
   type RentCollectionView,
 } from '@/utils';
 import { getDb } from './db';
+import { getIndexes } from './indexes';
 import { loadCollectedByMonth, sumCollected } from './ledger';
 
 // ---------------------------------------------------------------------------
 // Auth & properties
 // ---------------------------------------------------------------------------
-
-export interface LoginUser {
-  name: string;
-  email: string;
-  role: User['role'];
-}
-
-/** The accounts offered in the login screen's user dropdown (as on the web). */
-export function listLoginUsers(): LoginUser[] {
-  return getDb()
-    .users.filter((u) => u.isActive)
-    .map(({ name, email, role }) => ({ name, email, role }));
-}
-
-/** Credentials check. Returns the user on success, null on bad credentials. */
-export function authenticate(email: string, password: string): User | null {
-  const db = getDb();
-  const user = db.users.find((u) => u.email === email && u.isActive);
-  if (!user) return null;
-  return db.credentials[email] === password ? { ...user } : null;
-}
 
 /**
  * Properties the signed-in user can manage: ADMIN sees every active property,
@@ -113,13 +86,7 @@ export function getPropertyStats(propertyId: string): PropertyStats {
 type Db = ReturnType<typeof getDb>;
 
 function lookups(db: Db) {
-  return {
-    tenantById: new Map(db.tenants.map((t) => [t.id, t])),
-    roomById: new Map(db.rooms.map((r) => [r.id, r])),
-    bedById: new Map(db.beds.map((b) => [b.id, b])),
-    floorById: new Map(db.floors.map((f) => [f.id, f])),
-    blockById: new Map(db.blocks.map((b) => [b.id, b])),
-  };
+  return getIndexes(db);
 }
 
 /** Current-month position for an active tenancy, derived from the ledger. */
@@ -559,8 +526,9 @@ export interface FloorRoom {
 }
 
 function toFloorBed(db: Db, bed: Bed): FloorBed {
-  const tenancy = db.tenancies.find((t) => t.bedId === bed.id && t.status === 'ACTIVE');
-  const tenant = tenancy ? db.tenants.find((t) => t.id === tenancy.tenantId) : null;
+  const { activeByBed, tenantById } = lookups(db);
+  const tenancy = activeByBed.get(bed.id);
+  const tenant = tenancy ? tenantById.get(tenancy.tenantId) : null;
   return {
     id: bed.id,
     label: bed.label,
@@ -597,10 +565,7 @@ function toFloorRoom(db: Db, room: Room): FloorRoom {
     sharingType: room.sharingType,
     defaultRent: room.defaultRent,
     defaultMaintenance: room.defaultMaintenance,
-    beds: db.beds
-      .filter((b) => b.roomId === room.id)
-      .sort((a, b) => a.order - b.order)
-      .map((bed) => toFloorBed(db, bed)),
+    beds: (lookups(db).bedsByRoom.get(room.id) ?? []).map((bed) => toFloorBed(db, bed)),
   };
 }
 
@@ -673,14 +638,12 @@ export interface TenantListItem {
 
 export function getTenantList(propertyId: string): TenantListItem[] {
   const db = getDb();
-  const { roomById, bedById } = lookups(db);
+  const { roomById, bedById, activeByTenant } = lookups(db);
 
   return db.tenants
     .filter((t) => t.propertyId === propertyId)
     .map((tenant) => {
-      const active = db.tenancies.find(
-        (t) => t.tenantId === tenant.id && t.status === 'ACTIVE',
-      );
+      const active = activeByTenant.get(tenant.id);
       const bed = active ? bedById.get(active.bedId) : null;
       const room = active ? roomById.get(active.roomId) : null;
       return {
@@ -755,7 +718,7 @@ export function getTenantProfile(tenantId: string): TenantProfile | null {
       checkInDate: t.checkInDate,
       checkOutDate: t.checkOutDate,
       noticeGivenDate: t.noticeGivenDate,
-      expectedLeavingDate: t.expectedLeavingDate,
+      expectedLeavingDate: t.expectedLeavingDate ?? (t.noticeGivenDate ? new Date(new Date(t.noticeGivenDate).getTime() + 15 * 86400000).toISOString() : null),
       ...currentMonthPosition(db, t),
     }));
 
@@ -846,8 +809,7 @@ export function getCollectionsData(propertyId: string, month?: string): Collecti
       const bed = bedById.get(t.bedId);
       const floor = room ? floorById.get(room.floorId) : null;
       const block = floor?.blockId ? blockById.get(floor.blockId) : null;
-      const payments = db.payments
-        .filter((p) => p.tenancyId === t.id && p.status === 'PAID' && monthKey(p.forMonth) === key)
+      const payments = [...(lookups(db).paidByTenancyMonth.get(t.id)?.get(key) ?? [])]
         .sort((a, b) => (b.paidAt ?? '').localeCompare(a.paidAt ?? ''));
 
       const collected = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -1449,4 +1411,30 @@ export function getRoomOptions(propertyId: string): RoomOption[] {
     .filter((r) => r.propertyId === propertyId)
     .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
     .map(({ id, number }) => ({ id, number }));
+}
+
+/** The web dashboard's searchable occupied/available directory. */
+export interface OccupancyEntry {
+  id: string; status: BedStatus; roomId: string; roomNumber: string; bedLabel: string;
+  floorId: string; floorName: string; blockId: string | null; blockName: string | null;
+  tenant: { id: string; fullName: string } | null;
+}
+export function getOccupancyDirectory(propertyId: string): OccupancyEntry[] {
+  const db = getDb();
+  const { floorById, blockById, bedsByRoom, activeByBed, tenantById } = lookups(db);
+  const floorKeys = new Map(db.floors.map(f => [f.id, floorSortKey(db, f)]));
+  return db.rooms.filter(r => r.propertyId === propertyId)
+    .sort((a, b) => (floorKeys.get(a.floorId) ?? '9999').localeCompare(floorKeys.get(b.floorId) ?? '9999') || a.order - b.order)
+    .flatMap(room => {
+      const floor = floorById.get(room.floorId);
+      const block = floor?.blockId ? blockById.get(floor.blockId) : null;
+      return (bedsByRoom.get(room.id) ?? []).map(bed => {
+        const tenancy = activeByBed.get(bed.id);
+        const tenant = tenancy ? tenantById.get(tenancy.tenantId) : null;
+        return { id: bed.id, status: bed.status, roomId: room.id, roomNumber: room.number, bedLabel: bed.label,
+          floorId: room.floorId, floorName: floor?.name ?? `Floor ${floor?.number ?? ''}`,
+          blockId: block?.id ?? null, blockName: block?.name ?? null,
+          tenant: tenant ? { id: tenant.id, fullName: tenant.fullName } : null };
+      });
+    });
 }

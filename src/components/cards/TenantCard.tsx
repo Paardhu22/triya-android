@@ -5,7 +5,7 @@ import { Icon } from '@/components/Icon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Typography } from '@/components/Typography';
 import { COLLECTION_STATE_META } from '@/constants';
-import type { TenantListItem } from '@/mocks';
+import type { TenantListItem } from '@/data';
 import { colors, spacing } from '@/theme';
 import { bedLocationShort, formatINR } from '@/utils';
 
@@ -32,7 +32,7 @@ export function TenantCard({ tenant, isFlat, onPress }: TenantCardProps) {
       accessibilityRole="button"
       accessibilityLabel={tenant.fullName}
     >
-      <Avatar name={tenant.fullName} size="md" />
+      <Avatar name={tenant.fullName} uri={tenant.photoUrl} size="md" />
 
       <View style={styles.body}>
         <Typography variant="bodyMedium" numberOfLines={1} colorValue={active ? colors.text : colors.textSecondary}>

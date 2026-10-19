@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import {
   BarChart,
   EmptyState,
+  ErrorState,
   FilterChips,
   GroupedItem,
   Icon,
@@ -24,7 +25,7 @@ import {
 } from '@/components';
 import { COLLECTION_STATE_META } from '@/constants';
 import { useRentReport } from '@/hooks';
-import type { ReportFloorRow, ReportRoomRow, ReportTenantRow } from '@/mocks';
+import type { ReportFloorRow, ReportRoomRow, ReportTenantRow } from '@/data';
 import { useActiveProperty } from '@/store';
 import { borderRadius, colors, spacing, GUTTER } from '@/theme';
 import {
@@ -37,6 +38,7 @@ import {
   paiseToRupees,
   type PaymentFilter,
 } from '@/utils';
+import { toCsv, shareCsv } from '@/services/export';
 import { haptics } from '@/utils/haptics';
 
 type Tab = 'floor' | 'room' | 'tenant';
@@ -44,19 +46,6 @@ type Row = ReportFloorRow | ReportRoomRow | ReportTenantRow;
 
 /** Rupees with no symbol — spreadsheets should see a number, not "₹1,234". */
 const csvAmount = (paise: number) => paiseToRupees(paise).toFixed(2);
-
-function toCsv(rows: (string | number)[][]): string {
-  return rows
-    .map((row) =>
-      row
-        .map((cell) => {
-          const value = String(cell);
-          return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-        })
-        .join(','),
-    )
-    .join('\n');
-}
 
 const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
 
@@ -72,7 +61,7 @@ export function ReportsScreen() {
   const property = useActiveProperty();
   const roomNoun = property.isFlat ? 'Flat' : 'Room';
   const [month, setMonth] = useState(monthKey(new Date()));
-  const { data: report, isLoading, isFetching } = useRentReport(property.id, month);
+  const { data: report, isLoading, isFetching, error, refetch } = useRentReport(property.id, month);
 
   const [tab, setTab] = useState<Tab>('floor');
   const [search, setSearch] = useState('');
@@ -124,7 +113,7 @@ export function ReportsScreen() {
       ]);
     }
     try {
-      await Share.share({ title: `rent-report-${report.month}-${tab}.csv`, message: csv });
+      await shareCsv(`rent-report-${report.month}-${tab}.csv`, csv);
     } catch {
       toast.error('Could not open the share sheet');
     }
@@ -144,6 +133,8 @@ export function ReportsScreen() {
     ),
     [rows.length, tab, property.isFlat],
   );
+
+  if (!isLoading && !report) return <Screen><ErrorState message={error ?? 'Report unavailable'} onRetry={refetch} /></Screen>;
 
   if (isLoading || !report) {
     return (

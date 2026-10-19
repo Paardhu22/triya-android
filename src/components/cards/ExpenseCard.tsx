@@ -2,7 +2,7 @@ import { Pressable, View, StyleSheet } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
-import type { ExpenseListItem } from '@/mocks';
+import type { ExpenseListItem } from '@/data';
 import { colors, spacing, borderRadius } from '@/theme';
 import { formatFullDate, formatINR } from '@/utils';
 

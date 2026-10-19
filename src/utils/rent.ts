@@ -1,5 +1,5 @@
 /**
- * Rent collection rules shared by the mock queries/actions and the UI. Pure
+ * Rent collection rules shared by the server-derived view models and the UI. Pure
  * functions only.
  *
  * Ported from the web app (src/lib/rent.ts). The ledger model: a Payment row

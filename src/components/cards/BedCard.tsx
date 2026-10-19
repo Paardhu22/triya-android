@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
-import type { FloorBed } from '@/mocks';
+import type { FloorBed } from '@/data';
 import { borderRadius, colors, elevation, spacing } from '@/theme';
 import { formatINR } from '@/utils';
 

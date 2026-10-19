@@ -1,3 +1,4 @@
+import { PropertyLogo } from './PropertyLogo';
 import { useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 
@@ -43,9 +44,7 @@ export function PropertySelector({ properties, selectedId, onSelect }: PropertyS
         accessibilityRole="button"
         accessibilityLabel="Switch property"
       >
-        <View style={styles.triggerIcon}>
-          <Icon name="home-city-outline" size={15} color={colors.textInverse} />
-        </View>
+        {selected ? <PropertyLogo property={selected} size={30} /> : <Icon name="home-city-outline" size={18} color={colors.primary} />}
         <Typography variant="bodySemibold" numberOfLines={1} style={styles.triggerLabel}>
           {selected?.name ?? 'Select property'}
         </Typography>
@@ -71,6 +70,7 @@ export function PropertySelector({ properties, selectedId, onSelect }: PropertyS
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
               >
+                <PropertyLogo property={property} size={36} />
                 <View style={styles.optionText}>
                   <Typography variant="bodyMedium" numberOfLines={1}>
                     {property.name}

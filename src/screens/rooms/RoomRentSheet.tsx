@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { BottomSheet, Button, CheckboxRow, TextInput, Typography, toast } from '@/components';
 import { useAction } from '@/hooks';
-import { setRoomRent } from '@/mocks';
+import { setRoomRent } from '@/data';
 import { useAuth } from '@/store';
 import { colors, spacing } from '@/theme';
 import { paiseToRupees, rupeesToPaise } from '@/utils';
@@ -51,13 +51,14 @@ export function RoomRentSheet({
   const [error, setError] = useState<string | null>(null);
   const noun = isFlat ? 'Flat' : 'Room';
 
-  useEffect(() => {
-    if (!visible) return;
-    setRent(toInput(room.defaultRent));
-    setMaintenance(toInput(room.defaultMaintenance));
-    setApplyToOccupants(false);
-    setError(null);
-  }, [visible, room.defaultRent, room.defaultMaintenance]);
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) {
+      setRent(toInput(room.defaultRent)); setMaintenance(toInput(room.defaultMaintenance));
+      setApplyToOccupants(false); setError(null);
+    }
+  }
 
   async function save() {
     const rentValue = toAmount(rent);

@@ -2,6 +2,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { Button, toast } from '@/components';
+import { shareCsv, toCsv } from '@/services/export';
+import { DEFAULT_FILTERS, applyExpenseFilters, hasActiveFilters } from '@/utils/expenseFilters';
+import { ExpenseFiltersSheet } from './ExpenseFiltersSheet';
+import { CategoryManagerSheet } from './CategoryManagerSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { FAB } from '@/components/FAB';
@@ -13,8 +18,8 @@ import { Typography } from '@/components/Typography';
 import { ExpenseCard } from '@/components/cards/ExpenseCard';
 import { GroupedItem } from '@/components/GroupedItem';
 import { useExpenseCategories, useExpenses } from '@/hooks';
-import type { ExpenseListItem } from '@/mocks';
-import { useActiveProperty } from '@/store';
+import type { ExpenseListItem } from '@/data';
+import { useActiveProperty, useAuth } from '@/store';
 import { colors, spacing, GUTTER } from '@/theme';
 import { formatINR } from '@/utils';
 import { AddExpenseSheet } from './AddExpenseSheet';
@@ -41,21 +46,24 @@ export function ExpensesScreen() {
   const { data: categories } = useExpenseCategories(property.id);
 
   const [search, setSearch] = useState('');
-  const [categoryId, setCategoryId] = useState('ALL');
+  const { user } = useAuth();
+  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return expenses.filter((e) => {
-      if (categoryId !== 'ALL' && e.categoryId !== categoryId) return false;
-      if (q) {
-        const haystack =
-          `${e.categoryName} ${e.subcategoryName ?? ''} ${e.vendor ?? ''} ${e.notes ?? ''}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [expenses, search, categoryId]);
+  const filtered = useMemo(() => applyExpenseFilters(expenses, { ...filters, search }), [expenses, filters, search]);
+  async function exportExpenses() {
+    setExporting(true);
+    try {
+      await shareCsv('triya-expenses.csv', toCsv([
+        ['Date', 'Category', 'Subcategory', 'Vendor', 'Amount (INR)', 'Notes', 'Receipt'],
+        ...filtered.map(e => [e.date.slice(0, 10), e.categoryName, e.subcategoryName ?? '', e.vendor ?? '', (e.amount / 100).toFixed(2), e.notes ?? '', e.receiptKey ? 'Yes' : 'No']),
+      ]));
+    } catch { toast.error('Could not export expenses'); }
+    finally { setExporting(false); }
+  }
 
   const totalPaise = useMemo(
     () => filtered.reduce((sum, e) => sum + e.amount, 0),
@@ -80,13 +88,21 @@ export function ExpensesScreen() {
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search vendor or notes" />
         <FilterChips
           inset={GUTTER}
-          value={categoryId}
-          onChange={setCategoryId}
+          value={filters.categoryId || 'ALL'}
+          onChange={v => setFilters({ ...filters, categoryId: v === 'ALL' ? '' : v, subcategoryId: '' })}
           options={[
             { value: 'ALL', label: 'All categories' },
             ...(categories ?? []).map((c) => ({ value: c.id, label: c.name })),
           ]}
         />
+        {(categories?.find(c => c.id === filters.categoryId)?.subcategories.length ?? 0) > 0 && <FilterChips
+          value={filters.subcategoryId} onChange={v => setFilters({ ...filters, subcategoryId: v })}
+          options={[{ value: '', label: 'All subcategories' }, ...(categories?.find(c => c.id === filters.categoryId)?.subcategories ?? []).map(c => ({ value: c.id, label: c.name }))]} />}
+        <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+          <Button title={hasActiveFilters(filters) ? 'Filters active' : 'Filters'} variant="outline" size="sm" icon="filter-variant" onPress={() => setFiltersOpen(true)} />
+          <Button title="Export CSV" variant="outline" size="sm" icon="export-variant" disabled={!filtered.length || exporting} loading={exporting} onPress={() => void exportExpenses()} />
+          {(user?.role === 'ADMIN' || user?.role === 'MANAGER') && <Button title="Categories" variant="ghost" size="sm" onPress={() => setCategoriesOpen(true)} />}
+        </View>
         {filtered.length > 0 && (
           <View style={styles.totalRow}>
             <Typography variant="caption" color="textSecondary">
@@ -128,6 +144,8 @@ export function ExpensesScreen() {
 
       <FAB label="Add expense" onPress={() => setAddOpen(true)} icon="plus" />
 
+      <ExpenseFiltersSheet visible={filtersOpen} onClose={() => setFiltersOpen(false)} filters={filters} onChange={setFilters} />
+      <CategoryManagerSheet visible={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
       <AddExpenseSheet
         visible={addOpen}
         onClose={() => setAddOpen(false)}

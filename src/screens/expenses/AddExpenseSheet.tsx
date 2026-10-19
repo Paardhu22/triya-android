@@ -1,18 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import {
   BottomSheet,
   Button,
   FilterChips,
+  DateField,
   TextInput,
   Typography,
+  ErrorState,
+  SkeletonCardList,
 } from '@/components';
+import { AttachmentPicker } from '@/components/AttachmentPicker';
+import type { PickedFile } from '@/services/types';
 import { useAction, useExpenseCategories } from '@/hooks';
-import { createExpense } from '@/mocks';
+import { createExpense } from '@/data';
 import { useActiveProperty, useAuth } from '@/store';
 import { colors, spacing } from '@/theme';
-import { rupeesToPaise, toISODateOnly } from '@/utils';
+import { rupeesToPaise } from '@/utils';
 
 export interface AddExpenseSheetProps {
   visible: boolean;
@@ -31,35 +36,38 @@ function parseRupees(text: string): number {
  *
  * The web's "Add expense" dialog as a bottom sheet: category (and
  * subcategory when the category defines any — required then, exactly the
- * web rule), amount, date, vendor and notes. Receipt capture arrives with
- * the device-services build.
+ * web rule), amount, native date, vendor, notes and an optional receipt.
  */
 export function AddExpenseSheet({ visible, onClose, onCreated }: AddExpenseSheetProps) {
   const property = useActiveProperty();
   const { user } = useAuth();
-  const { data: categories } = useExpenseCategories(property.id);
+  const { data: categories, isLoading, error: loadError, refetch } = useExpenseCategories(property.id, visible);
   const { busy, run } = useAction();
 
   const [categoryId, setCategoryId] = useState('');
   const [subcategoryId, setSubcategoryId] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(toISODateOnly());
+  const [date, setDate] = useState(() => new Date());
   const [vendor, setVendor] = useState('');
   const [notes, setNotes] = useState('');
+  const [receipt, setReceipt] = useState<PickedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
     if (visible) {
       setCategoryId(categories?.[0]?.id ?? '');
       setSubcategoryId('');
       setAmount('');
-      setDate(toISODateOnly());
+      setDate(new Date());
+      setReceipt(null);
       setVendor('');
       setNotes('');
       setError(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }
+  if (visible && !categoryId && categories?.length) setCategoryId(categories[0].id);
 
   const subcategories = useMemo(
     () => categories?.find((c) => c.id === categoryId)?.subcategories ?? [],
@@ -72,21 +80,17 @@ export function AddExpenseSheet({ visible, onClose, onCreated }: AddExpenseSheet
       setError('Select a subcategory.');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-      setError('Date must be YYYY-MM-DD.');
-      return;
-    }
     const result = await run(() =>
       createExpense({
         propertyId: property.id,
         categoryId,
         subcategoryId: subcategories.length > 0 ? subcategoryId : null,
         amount: parseRupees(amount),
-        date: new Date(`${date.trim()}T00:00:00`).toISOString(),
+        date: date.toISOString(),
         vendor: vendor.trim() || null,
         notes: notes.trim() || null,
         createdByName: user?.name ?? null,
-      }),
+      }, receipt),
     );
     if (!result.ok) {
       setError(result.error);
@@ -100,7 +104,7 @@ export function AddExpenseSheet({ visible, onClose, onCreated }: AddExpenseSheet
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Add expense">
-      {noCategories ? (
+      {isLoading ? <SkeletonCardList rows={2} /> : loadError && !categories ? <ErrorState message={loadError} onRetry={refetch} /> : noCategories ? (
         <View style={styles.emptyBox}>
           <Typography variant="caption" color="textSecondary" style={styles.emptyText}>
             No categories yet. Categories are managed by your administrator.
@@ -154,13 +158,7 @@ export function AddExpenseSheet({ visible, onClose, onCreated }: AddExpenseSheet
               />
             </View>
             <View style={styles.col}>
-              <TextInput
-                label="Date"
-                placeholder="YYYY-MM-DD"
-                autoCapitalize="none"
-                value={date}
-                onChangeText={setDate}
-              />
+              <DateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} />
             </View>
           </View>
 
@@ -176,6 +174,8 @@ export function AddExpenseSheet({ visible, onClose, onCreated }: AddExpenseSheet
             value={notes}
             onChangeText={setNotes}
           />
+
+          <AttachmentPicker value={receipt} onChange={setReceipt} label="Receipt (optional)" disabled={busy} />
 
           {error && (
             <Typography variant="caption" colorValue={colors.error}>

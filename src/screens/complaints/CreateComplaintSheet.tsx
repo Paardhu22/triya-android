@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import {
@@ -10,7 +10,7 @@ import {
   Typography,
 } from '@/components';
 import { useAction, useAssignableUsers } from '@/hooks';
-import { createComplaint } from '@/mocks';
+import { createComplaint } from '@/data';
 import { useActiveProperty } from '@/store';
 import { colors, spacing } from '@/theme';
 import type { ComplaintPriority } from '@/types';
@@ -33,7 +33,7 @@ const UNASSIGNED = 'none';
  */
 export function CreateComplaintSheet({ visible, onClose, onCreated }: CreateComplaintSheetProps) {
   const property = useActiveProperty();
-  const { data: users } = useAssignableUsers(property.id);
+  const { data: users } = useAssignableUsers(property.id, visible);
   const { busy, run } = useAction();
 
   const [title, setTitle] = useState('');
@@ -42,7 +42,9 @@ export function CreateComplaintSheet({ visible, onClose, onCreated }: CreateComp
   const [assignedToId, setAssignedToId] = useState<string>(UNASSIGNED);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
     if (visible) {
       setTitle('');
       setDescription('');
@@ -50,7 +52,7 @@ export function CreateComplaintSheet({ visible, onClose, onCreated }: CreateComp
       setAssignedToId(UNASSIGNED);
       setError(null);
     }
-  }, [visible]);
+  }
 
   async function onSubmit() {
     const result = await run(() =>

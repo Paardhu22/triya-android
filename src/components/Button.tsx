@@ -92,6 +92,7 @@ export function Button({
         onPressIn?.(e);
       }}
       accessibilityRole="button"
+      accessibilityLabel={title}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       {...rest}
     >

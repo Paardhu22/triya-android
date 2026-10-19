@@ -1,7 +1,8 @@
+import { TenantDocuments } from './TenantDocuments';
+import { ErrorState } from '@/components/ErrorState';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Image } from 'expo-image';
 import Animated from 'react-native-reanimated';
 
 import {
@@ -25,7 +26,7 @@ import {
 } from '@/components';
 import { COLLECTION_STATE_META, DEPOSIT_STATUS_META, PAYMENT_STATUS_META } from '@/constants';
 import { useAction, useTenantProfile } from '@/hooks';
-import { deleteTenant, sendRules } from '@/mocks';
+import { deleteTenant, sendRules } from '@/data';
 import { CollectRentSheet } from '@/screens/collections/CollectRentSheet';
 import { useActiveProperty } from '@/store';
 import { borderRadius, colors, spacing, GUTTER } from '@/theme';
@@ -56,12 +57,14 @@ export function TenantProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const property = useActiveProperty();
-  const { data: profile, isLoading } = useTenantProfile(id);
+  const { data: profile, isLoading, error: loadError, refetch } = useTenantProfile(id);
   const { busy: isDeleting, run: runDelete } = useAction();
   const { busy: isSendingRules, run: runSendRules } = useAction();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
+
+  if (!isLoading && !profile) return <Screen edges={['bottom']}><ErrorState message={loadError ?? 'Tenant not found in this property.'} onRetry={refetch} /></Screen>;
 
   if (isLoading || !profile) {
     return (
@@ -122,7 +125,7 @@ export function TenantProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Identity */}
         <Animated.View entering={enterHeader()} style={styles.identity}>
-          <Avatar name={tenant.fullName} uri={null} size="xl" />
+          <Avatar name={tenant.fullName} uri={tenant.photoUrl} size="xl" />
           <View style={styles.identityText}>
             <Typography variant="h1" numberOfLines={2}>
               {tenant.fullName}
@@ -277,25 +280,7 @@ export function TenantProfileScreen() {
             {kycRows.map((row) => (
               <KeyValue key={row.label} label={row.label} value={row.value as string} divider />
             ))}
-            {tenant.photoUrl && /^(https?|file):/.test(tenant.photoUrl) ? (
-              <Image
-                source={{ uri: tenant.photoUrl }}
-                style={styles.kycImage}
-                contentFit="contain"
-                accessibilityLabel="KYC document"
-              />
-            ) : tenant.photoUrl ? (
-              <View style={styles.kycFile}>
-                <Icon name="card-account-details-outline" size={18} color={colors.success} />
-                <Typography variant="small" color="textSecondary">
-                  KYC photo on file — opens from the web app.
-                </Typography>
-              </View>
-            ) : (
-              <Typography variant="small" color="textTertiary" style={styles.kycNote}>
-                No KYC document uploaded yet.
-              </Typography>
-            )}
+            <TenantDocuments tenantId={tenant.id} photoKey={tenant.photoUrl} />
           </Surface>
         </Animated.View>
 

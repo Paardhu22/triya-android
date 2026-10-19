@@ -4,7 +4,7 @@ import { Icon } from '@/components/Icon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Typography } from '@/components/Typography';
 import { COMPLAINT_PRIORITY_META, COMPLAINT_STATUS_META } from '@/constants';
-import type { ComplaintListItem } from '@/mocks';
+import type { ComplaintListItem } from '@/data';
 import { colors, spacing} from '@/theme';
 import { formatDayMonth } from '@/utils';
 

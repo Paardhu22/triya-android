@@ -1,34 +1,18 @@
-/**
- * Busy-state wrapper for mock mutations. Mirrors the web's useTransition +
- * server-action pattern: run(action) simulates latency, executes the
- * synchronous mock action, and hands back its ActionResult.
- */
-
 import { useCallback, useRef, useState } from 'react';
+import type { ActionResult } from '@/data';
 
-import { simulateLatency, type ActionResult } from '@/mocks';
-
-export interface UseActionResult {
-  /** True while any action started by this hook is in flight. */
-  busy: boolean;
-  run: <T>(action: () => ActionResult<T>) => Promise<ActionResult<T>>;
-}
-
-export function useAction(): UseActionResult {
+export function useAction() {
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(0);
-
-  const run = useCallback(async <T,>(action: () => ActionResult<T>) => {
-    inFlight.current += 1;
+  const run = useCallback(async <T,>(action: () => ActionResult<T> | Promise<ActionResult<T>>): Promise<ActionResult<T>> => {
+    if (inFlight.current) return { ok: false, error: 'An action is already in progress' };
+    inFlight.current++;
     setBusy(true);
-    try {
-      await simulateLatency();
-      return action();
-    } finally {
-      inFlight.current -= 1;
-      if (inFlight.current === 0) setBusy(false);
-    }
+    try { return await action(); }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Could not complete the action' }; }
+    finally { if (--inFlight.current === 0) setBusy(false); }
   }, []);
-
   return { busy, run };
 }
+
+export type UseActionResult = ReturnType<typeof useAction>;

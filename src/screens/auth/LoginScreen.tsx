@@ -17,44 +17,40 @@ import {
 import { useAuth } from '@/store';
 import { colors, fontFamilies, spacing, borderRadius } from '@/theme';
 
-const DEFAULT_LOGIN_USERS = [
-  { name: 'Triya Admin', email: 'admin@triya.local', role: 'ADMIN' },
-  { name: 'Joystayz', email: 'joystayz@triya.local', role: 'MANAGER' },
-  { name: 'Frieden Co-Living', email: 'frieden@triya.local', role: 'MANAGER' },
-  { name: 'Cozy Gowlidoddy', email: 'cozy@triya.local', role: 'MANAGER' },
-  { name: 'testing', email: 'testing@triya.local', role: 'MANAGER' },
-];
-
 /** Sign in to the real Triya Manager account. */
 export function LoginScreen() {
   const router = useRouter();
   const { signIn } = useAuth();
 
-  const [email, setEmail] = useState('admin@triya.local');
-  const [users, setUsers] = useState<{ name: string; email: string; role: string }[]>(DEFAULT_LOGIN_USERS);
+  const [email, setEmail] = useState('');
+  const [users, setUsers] = useState<{ name: string; email: string; role: string }[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accountsAttempt, setAccountsAttempt] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [manualEmail, setManualEmail] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void request<{ users: typeof users }>('login')
+    const controller = new AbortController();
+    void request<{ users: typeof users }>('login', { signal: controller.signal })
       .then(result => {
-        if (!cancelled && result?.users?.length) {
+        if (!cancelled) {
           setUsers(result.users);
-          setEmail(current => current || result.users[0]?.email || 'admin@triya.local');
+          setEmail(current => current || result.users[0]?.email || '');
+          setAccountsError(null);
         }
       })
-      .catch(() => {
-        // Default users remain available so the account picker always works
-      });
-    return () => { cancelled = true; };
-  }, []);
+      .catch(error => { if (!cancelled) setAccountsError(error instanceof Error ? error.message : 'Could not load accounts'); })
+      .finally(() => { if (!cancelled) setAccountsLoading(false); });
+    return () => { cancelled = true; controller.abort(); };
+  }, [accountsAttempt]);
 
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedUser = users.find(u => u.email === email) ?? users[0];
+  const selectedUser = users.find(u => u.email === email);
   const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting;
 
   async function onSubmit() {
@@ -120,6 +116,7 @@ export function LoginScreen() {
                   style={styles.selector}
                   accessibilityRole="button"
                   accessibilityLabel="Select user"
+                  disabled={accountsLoading || users.length === 0}
                   onPress={() => setPickerOpen(true)}
                 >
                   <View style={styles.selectorContent}>
@@ -129,13 +126,13 @@ export function LoginScreen() {
                       </Typography>
                     </View>
                     <Typography variant="bodyMedium" style={styles.selectorText}>
-                      {selectedUser?.name ?? 'Select an account'}
+                      {accountsLoading ? 'Loading accounts…' : selectedUser?.name ?? 'Select an account'}
                     </Typography>
-                    <View style={[styles.roleTag, selectedUser?.role === 'ADMIN' ? styles.adminTag : styles.managerTag]}>
+                    {selectedUser && <View style={[styles.roleTag, selectedUser.role === 'ADMIN' ? styles.adminTag : styles.managerTag]}>
                       <Typography variant="overline" style={selectedUser?.role === 'ADMIN' ? styles.adminTagText : styles.managerTagText}>
                         {selectedUser?.role === 'ADMIN' ? 'Admin' : 'PG Manager'}
                       </Typography>
-                    </View>
+                    </View>}
                   </View>
                   <Icon name="chevron-down" size={20} color={colors.textSecondary} />
                 </Pressable>
@@ -168,6 +165,12 @@ export function LoginScreen() {
                 </Pressable>
               </>
             )}
+            {accountsError && <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+              <Typography variant="small" color="textSecondary">{accountsError}. You can also enter your email.</Typography>
+              <Button title="Retry loading accounts" variant="ghost" size="sm" loading={accountsLoading} disabled={accountsLoading} onPress={() => {
+                setAccountsLoading(true); setAccountsAttempt(value => value + 1);
+              }} />
+            </View>}
           </View>
 
           {/* Password */}

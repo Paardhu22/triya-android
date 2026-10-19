@@ -38,7 +38,7 @@ function parseText(text: string, mode: 'date' | 'datetime'): Date | null {
       : /^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/.exec(text.trim());
   if (!m) return null;
   const d = new Date(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return Number.isNaN(d.getTime()) || d.getFullYear() !== +m[1] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3] || (m[4] && d.getHours() !== +m[4]) || (m[5] && d.getMinutes() !== +m[5]) ? null : d;
 }
 
 /**

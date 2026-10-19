@@ -3,7 +3,7 @@
  *
  * Mirrors the backend Prisma schema (triya-manager/prisma/schema.prisma).
  * The mobile app is a frontend over the same backend, so these shapes are the
- * single source of truth for what the API will eventually return.
+ * serialized contract for the authenticated mobile API.
  *
  * Conventions preserved from the backend:
  * - All monetary amounts are integer PAISE (1 rupee = 100 paise).
@@ -69,6 +69,8 @@ export interface Property {
   phone: string | null;
   /** Free-text house rules, sent verbatim over WhatsApp from the tenants page. */
   rulesText: string | null;
+  /** Private logo storage key, served through the backend files API. */
+  logoKey?: string | null;
   /** When true the property is organised into blocks (e.g. Frieden A / B). */
   hasBlocks: boolean;
   /**

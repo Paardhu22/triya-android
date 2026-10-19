@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import {
   BottomSheet,
+  ErrorState,
   Button,
   CheckboxRow,
   ConfirmDialog,
@@ -19,7 +20,7 @@ import {
 } from '@/components';
 import { COLLECTION_STATE_META, PAYMENT_STATUS_META } from '@/constants';
 import { useAction, useRentCollection } from '@/hooks';
-import { collectRent, deleteRentCollection, type CollectRentResult } from '@/mocks';
+import { collectRent, deleteRentCollection, type CollectRentResult } from '@/data';
 import { useAuth } from '@/store';
 import { borderRadius, colors, spacing } from '@/theme';
 import type { PaymentMethod } from '@/types';
@@ -104,7 +105,7 @@ export function CollectRentSheet({
   const { busy, run } = useAction();
 
   const [month, setMonth] = useState(defaultMonth ?? monthKey(new Date()));
-  const { data: view, isLoading, isFetching } = useRentCollection(
+  const { data: view, isLoading, isFetching, error: loadError, refetch } = useRentCollection(
     visible ? tenancyId : null,
     month,
   );
@@ -119,28 +120,19 @@ export function CollectRentSheet({
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-  // Fresh form whenever the sheet opens.
-  useEffect(() => {
-    if (!visible) return;
-    setMonth(defaultMonth ?? monthKey(new Date()));
-    setMethod('CASH');
-    setCash('');
-    setOnline('');
-    setCollectedAt(new Date());
-    setNotes('');
-    setSendInvoice(true);
-    setError(null);
-  }, [visible, tenancyId, defaultMonth]);
-
-  // Pre-fill with what is still owed — the overwhelmingly common case — but
-  // leave it editable so a part payment is recorded as it actually happened.
-  const loadedKey = view ? `${view.tenancyId}:${view.month}` : null;
-  useEffect(() => {
-    if (!view) return;
-    setAmount(rupeeText(view.balancePaise));
-    setError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey]);
+  const [wasVisible, setWasVisible] = useState(false);
+  const [prefilledKey, setPrefilledKey] = useState<string | null>(null);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) {
+      setMonth(defaultMonth ?? monthKey(new Date())); setMethod('CASH'); setCash(''); setOnline('');
+      setCollectedAt(new Date()); setNotes(''); setSendInvoice(true); setError(null); setPrefilledKey(null);
+    }
+  }
+  const loadedKey = view && view.tenancyId === tenancyId && view.month === month ? `${view.tenancyId}:${view.month}` : null;
+  if (visible && loadedKey && view && loadedKey !== prefilledKey) {
+    setPrefilledKey(loadedKey); setAmount(rupeeText(view.balancePaise)); setError(null);
+  }
 
   // Months from move-in to now, newest first.
   const monthOptions = useMemo(() => {
@@ -232,7 +224,7 @@ export function CollectRentSheet({
           />
         }
       >
-        {loading ? (
+        {!isLoading && !view ? <ErrorState message={loadError ?? 'Active tenancy unavailable'} onRetry={refetch} /> : loading ? (
           <View style={styles.loading}>
             <Skeleton height={36} width={170} radius={18} />
             <Skeleton height={132} radius={borderRadius.lg} />

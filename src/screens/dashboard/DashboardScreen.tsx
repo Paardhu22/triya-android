@@ -1,9 +1,13 @@
+import { useState } from 'react';
+import type { BedStatus } from '@/types';
+import { OccupancyDirectory } from './OccupancyDirectory';
 import { RefreshControl, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
 
 import {
   BarChart,
+  ErrorState,
   LargeTitle,
   ListRow,
   OccupancyBars,
@@ -27,7 +31,7 @@ import {
   PAYMENT_STATUS_META,
 } from '@/constants';
 import { useDashboard } from '@/hooks';
-import type { DashboardData } from '@/mocks';
+import type { DashboardData } from '@/data';
 import { useActiveProperty } from '@/store';
 import { borderRadius, colors, spacing, GUTTER } from '@/theme';
 import {
@@ -61,7 +65,7 @@ const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / who
  */
 export function DashboardScreen() {
   const property = useActiveProperty();
-  const { data, isLoading, isRefreshing, refresh } = useDashboard(property.id);
+  const { data, isLoading, error, refetch, isRefreshing, refresh } = useDashboard(property.id);
   const { scrollY, onScroll } = useScrollHeader();
 
   return (
@@ -86,7 +90,7 @@ export function DashboardScreen() {
           subtitle={`Occupancy and rent for ${property.name} as at ${formatLongDate(new Date())}.`}
           scrollY={scrollY}
         />
-        {isLoading || !data ? <DashboardSkeleton /> : <DashboardBody data={data} />}
+        {!isLoading && !data ? <ErrorState message={error ?? 'Dashboard unavailable'} onRetry={refetch} /> : isLoading || !data ? <DashboardSkeleton /> : <DashboardBody data={data} />}
       </Animated.ScrollView>
     </Screen>
   );
@@ -98,6 +102,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
   const { isFlat, hasBlocks } = property;
   const occupancyRate = pct(data.occupiedBeds, data.totalBeds);
   const collectionRate = pct(data.collectedPaise, data.expectedPaise);
+  const [directory, setDirectory] = useState<BedStatus | null>(null);
   const unit = isFlat ? 'flats' : 'beds';
 
   let section = 0;
@@ -111,8 +116,8 @@ function DashboardBody({ data }: { data: DashboardData }) {
           title="Capacity overview"
           meta={`${data.totalRooms} ${isFlat ? 'units' : 'rooms'} total`}
         />
-        <Surface>
-          <StatGrid>
+        <View>
+          <StatGrid variant="plain">
             <StatCell
               label={isFlat ? 'Total flats' : 'Total beds'}
               value={data.totalBeds}
@@ -122,8 +127,9 @@ function DashboardBody({ data }: { data: DashboardData }) {
               label="Occupied"
               value={data.occupiedBeds}
               hint={`${occupancyRate}% of capacity filled`}
+              onPress={() => setDirectory('OCCUPIED')} actionLabel="View list"
             />
-            <StatCell label="Available" value={data.availableBeds} hint={`${unit} ready to move in`} />
+            <StatCell label="Available" value={data.availableBeds} hint={`${unit} ready to move in`} onPress={() => setDirectory('AVAILABLE')} actionLabel="View list" />
             <StatCell
               label={isFlat ? 'Units let' : 'Rooms full'}
               value={`${data.fullRooms}/${data.totalRooms}`}
@@ -133,7 +139,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
           <View style={styles.occupancyStrip}>
             <ProgressBar pct={occupancyRate} color={colors.chart1} height={4} />
           </View>
-        </Surface>
+        </View>
       </Animated.View>
 
       {/* 02 · Financial ledger */}
@@ -142,8 +148,8 @@ function DashboardBody({ data }: { data: DashboardData }) {
           title={`Financial ledger · ${formatMonthYear(data.monthStart).split(' ')[0]}`}
           meta={`${collectionRate}% realization`}
         />
-        <Surface>
-          <StatGrid>
+        <View>
+          <StatGrid variant="plain">
             <StatCell
               label="Expected rent"
               value={data.expectedPaise}
@@ -163,7 +169,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
               hint={`${data.unpaidCount} unpaid · ${data.partialCount} part paid · ${data.overdueCount} overdue`}
             />
             <StatCell
-              label="Expenses"
+              label="Operational expenses"
               value={data.expensesPaise}
               format={formatINRCompact}
               hint={`Net ${formatINRCompact(data.netPaise)} this month`}
@@ -177,7 +183,7 @@ function DashboardBody({ data }: { data: DashboardData }) {
             icon="wallet-outline"
             onPress={() => router.navigate('/(main)/(tabs)/collections' as never)}
           />
-        </Surface>
+        </View>
       </Animated.View>
 
       {/* 03 · Trend */}
@@ -377,6 +383,8 @@ function DashboardBody({ data }: { data: DashboardData }) {
           )}
         </Surface>
       </Animated.View>
+
+      <OccupancyDirectory status={directory} onClose={() => setDirectory(null)} />
 
       {/* 09 · Complaints log */}
       <Animated.View entering={next()}>

@@ -1,4 +1,4 @@
-import { Image } from 'expo-image';
+import { StoredImage } from './StoredImage';
 import { View, StyleSheet } from 'react-native';
 
 import { Typography } from '@/components/Typography';
@@ -69,17 +69,8 @@ export function Avatar({ name, uri, size = 'md' }: AvatarProps) {
   const dimension = DIMENSION[size];
   const tint = tintOf(name);
 
-  if (uri) {
-    return (
-      <Image
-        source={{ uri }}
-        style={[styles.image, { width: dimension, height: dimension }]}
-        accessibilityLabel={name}
-      />
-    );
-  }
 
-  return (
+  const fallback = (
     <View
       style={[
         styles.fallback,
@@ -99,6 +90,7 @@ export function Avatar({ name, uri, size = 'md' }: AvatarProps) {
       </Typography>
     </View>
   );
+  return uri ? <StoredImage storageKey={uri} style={[styles.image, { width: dimension, height: dimension }]} accessibilityLabel={name} fallback={fallback} /> : fallback;
 }
 
 const styles = StyleSheet.create({

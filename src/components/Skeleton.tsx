@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Animated,
   View,
@@ -30,7 +30,7 @@ export interface SkeletonProps {
  * <SkeletonCardList rows={6} />
  */
 export function Skeleton({ width = '100%', height = 14, radius = 6, style }: SkeletonProps) {
-  const opacity = useRef(new Animated.Value(0.5)).current;
+  const [opacity] = useState(() => new Animated.Value(0.5));
 
   useEffect(() => {
     const loop = Animated.loop(

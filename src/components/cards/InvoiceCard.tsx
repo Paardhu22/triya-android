@@ -3,7 +3,7 @@ import { Pressable, View, StyleSheet } from 'react-native';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Typography } from '@/components/Typography';
 import { INVOICE_STATUS_META } from '@/constants';
-import type { InvoiceHistoryRow } from '@/mocks';
+import type { InvoiceHistoryRow } from '@/data';
 import { colors, spacing } from '@/theme';
 import {
   bedLocationShort,

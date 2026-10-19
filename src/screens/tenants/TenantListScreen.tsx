@@ -1,3 +1,4 @@
+import { shareCsv, toCsv } from '@/services/export';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -5,6 +6,8 @@ import Animated from 'react-native-reanimated';
 
 import {
   EmptyState,
+  Button,
+  toast,
   ErrorState,
   FilterChips,
   GroupedItem,
@@ -20,7 +23,7 @@ import {
 } from '@/components';
 import { TenantCard } from '@/components/cards/TenantCard';
 import { useTenants } from '@/hooks';
-import type { TenantListItem } from '@/mocks';
+import type { TenantListItem } from '@/data';
 import { useActiveProperty } from '@/store';
 import { borderRadius, colors, spacing, GUTTER } from '@/theme';
 import {
@@ -48,6 +51,7 @@ export function TenantListScreen() {
     useTenants(property.id);
   const tenants = useMemo(() => tenantsData ?? [], [tenantsData]);
 
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [payment, setPayment] = useState<PaymentFilter>('ALL');
@@ -131,6 +135,17 @@ export function TenantListScreen() {
           </Pressable>
         }
       />
+      <Button title="Export filtered tenants" variant="ghost" size="sm" icon="export-variant" loading={exporting} disabled={!filtered.length || exporting} onPress={async () => {
+        setExporting(true);
+        try {
+          await shareCsv('triya-tenants.csv', toCsv([
+            ['Name', 'Phone', 'Status', property.isFlat ? 'Flat' : 'Room', 'Bed', 'Monthly due (INR)', 'Collected (INR)'],
+            ...filtered.map(t => [t.fullName, t.phone, t.active ? 'Current' : 'Past', t.active?.roomNumber ?? '', property.isFlat ? '' : t.active?.bedLabel ?? '',
+              ((t.active?.duePaise ?? 0) / 100).toFixed(2), ((t.active?.collectedPaise ?? 0) / 100).toFixed(2)]),
+          ]));
+        } catch { toast.error('Could not export tenants'); }
+        finally { setExporting(false); }
+      }} />
       <SearchBar value={search} onChangeText={setSearch} placeholder="Search name or phone" />
       <SegmentedControl
         value={status}

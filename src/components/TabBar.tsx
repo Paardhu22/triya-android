@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     paddingTop: 8,
-    backgroundColor: colors.background,
+    backgroundColor: colors.navigation,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },

@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import {
   BottomSheet,
   Button,
+  ErrorState,
+  SkeletonCardList,
   Icon,
   KeyValue,
   TextInput,
   Typography,
   toast,
 } from '@/components';
-import { useAction } from '@/hooks';
-import { getInvoiceDraftContext, sendInvoice } from '@/mocks';
+import { useAction, useAsyncData } from '@/hooks';
+import { getInvoiceDraftContext, sendInvoice } from '@/data';
 import { borderRadius, colors, spacing } from '@/theme';
 import {
   bedLocationLabel,
@@ -54,9 +56,9 @@ function parseRupees(text: string): number {
 export function SendInvoiceSheet({ visible, tenancyId, month, isFlat, onClose }: SendInvoiceSheetProps) {
   const { busy, run } = useAction();
 
-  const context = useMemo(
+  const { data: context, isLoading, isFetching, error: loadError, refetch } = useAsyncData(
     () => (visible && tenancyId ? getInvoiceDraftContext(tenancyId, month) : null),
-    [visible, tenancyId, month],
+    [tenancyId, month], { enabled: visible && !!tenancyId },
   );
 
   const [previousDue, setPreviousDue] = useState('');
@@ -66,19 +68,23 @@ export function SendInvoiceSheet({ visible, tenancyId, month, isFlat, onClose }:
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!visible) return;
-    setPreviousDue(
-      context && context.previousDuePaise > 0 ? String(paiseToRupees(context.previousDuePaise)) : '',
-    );
-    setExtraCharges('');
-    setExtraLabel('');
-    setDiscount('');
-    setNotes('');
-    setError(null);
-  }, [visible, context]);
+  const [wasVisible, setWasVisible] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) {
+      setPreviousDue(''); setPrefilled(false);
+      setExtraCharges(''); setExtraLabel(''); setDiscount(''); setNotes(''); setError(null);
+    }
+  }
+  if (visible && context && !prefilled) {
+    setPrefilled(true);
+    setPreviousDue(context.previousDuePaise > 0 ? String(paiseToRupees(context.previousDuePaise)) : '');
+  }
 
-  if (!context) return null;
+  if (!context) return <BottomSheet visible={visible} onClose={onClose} title="Send invoice">
+    {isLoading ? <SkeletonCardList rows={2} /> : <ErrorState message={loadError ?? 'This tenancy is no longer available.'} onRetry={refetch} />}
+  </BottomSheet>;
 
   const charges = {
     rentPaise: context.rentPaise,
@@ -98,7 +104,7 @@ export function SendInvoiceSheet({ visible, tenancyId, month, isFlat, onClose }:
   });
 
   async function onSend() {
-    if (!tenancyId) return;
+    if (!tenancyId || isFetching) return;
     setError(null);
     const result = await run(() =>
       sendInvoice({
@@ -132,6 +138,7 @@ export function SendInvoiceSheet({ visible, tenancyId, month, isFlat, onClose }:
           title={`Send ${formatINR(totalPaise)} on WhatsApp`}
           icon="whatsapp"
           loading={busy}
+          disabled={isFetching}
           onPress={onSend}
         />
       }

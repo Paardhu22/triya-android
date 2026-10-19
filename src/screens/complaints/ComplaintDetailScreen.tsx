@@ -1,3 +1,4 @@
+import { ErrorState } from '@/components/ErrorState';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import Animated from 'react-native-reanimated';
@@ -14,7 +15,7 @@ import { Typography } from '@/components/Typography';
 import { enterHeader, enterItem } from '@/components/motion';
 import { COMPLAINT_PRIORITY_META, COMPLAINT_STATUS_META } from '@/constants';
 import { useAction, useAssignableUsers, useComplaint } from '@/hooks';
-import { updateComplaint } from '@/mocks/actions';
+import { updateComplaint } from '@/data/actions';
 import { useActiveProperty } from '@/store';
 import { spacing } from '@/theme';
 import { formatFullDate, roomLabel } from '@/utils';
@@ -32,9 +33,11 @@ const UNASSIGNED = 'none';
 export function ComplaintDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const property = useActiveProperty();
-  const { data: complaint, isLoading, refetch } = useComplaint(id);
+  const { data: complaint, isLoading, error: loadError, refetch } = useComplaint(id);
   const { data: users } = useAssignableUsers(property.id);
   const { busy, run } = useAction();
+
+  if (!isLoading && !complaint) return <Screen edges={['bottom']}><ErrorState message={loadError ?? 'Complaint not found in this property.'} onRetry={refetch} /></Screen>;
 
   if (isLoading || !complaint) {
     return (

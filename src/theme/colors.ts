@@ -14,8 +14,9 @@ export const colors = {
   // Backgrounds
   background: '#FFFFFF', // web --card
   /** Screen canvas behind grouped surfaces (web --main-surface). */
-  canvas: '#F3F4F6',
+  canvas: '#FCFCFD',
   surface: '#F3F4F6', // web --muted
+  navigation: '#F7F7F9', // web --sidebar
   surfacePressed: '#ECEEF4', // web --hover / --accent
 
   // Text

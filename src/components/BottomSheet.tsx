@@ -76,9 +76,10 @@ export function BottomSheet({
   const [mounted, setMounted] = useState(visible);
   const translateY = useSharedValue(windowHeight);
 
+  if (visible && !mounted) setMounted(true);
+
   useEffect(() => {
     if (visible) {
-      setMounted(true);
       translateY.set(windowHeight);
       translateY.set(withTiming(0, { duration: 340, easing: EASE_OUT }));
     } else if (mounted) {

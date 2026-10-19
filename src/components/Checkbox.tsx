@@ -26,6 +26,8 @@ export function CheckboxRow({ checked, onChange, label, description, disabled }:
       style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled }}
+      aria-checked={checked}
+      aria-disabled={disabled}
     >
       <View style={[styles.box, checked && styles.boxChecked]}>
         {checked && (

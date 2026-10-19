@@ -3,12 +3,14 @@ import { View, FlatList, StyleSheet, Pressable } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { SkeletonCardList } from '@/components/Skeleton';
 import { Icon, type IconName } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { Typography } from '@/components/Typography';
 import { GroupedItem } from '@/components/GroupedItem';
 import { useNotifications, useAction } from '@/hooks';
-import { markAllNotificationsRead, markNotificationRead } from '@/mocks/actions';
+import { markAllNotificationsRead, markNotificationRead } from '@/data/actions';
 import { useActiveProperty } from '@/store';
 import { colors, spacing, borderRadius, fontFamilies, GUTTER } from '@/theme';
 import { formatRelative } from '@/utils';
@@ -17,6 +19,8 @@ import type { AppNotification } from '@/types';
 const KIND_ICONS: Record<string, IconName> = {
   RENT_DUE: 'currency-inr',
   PAYMENT_RECEIVED: 'check-circle-outline',
+  PAYMENT: 'check-circle-outline',
+  COMPLAINT: 'alert-circle-outline',
   COMPLAINT_NEW: 'alert-circle-outline',
   COMPLAINT_UPDATE: 'alert-circle-outline',
   EXPENSE_LOGGED: 'receipt',
@@ -61,9 +65,11 @@ export function NotificationsScreen() {
   const property = useActiveProperty();
   const {
     data: notificationsData,
+    isLoading,
+    error,
+    refetch,
     isRefreshing,
     refresh,
-    refetch,
   } = useNotifications(property.id);
   const notifications = notificationsData ?? [];
 
@@ -74,12 +80,12 @@ export function NotificationsScreen() {
 
   const handlePress = (notification: AppNotification) => {
     if (!notification.read) {
-      runMark(() => markNotificationRead(notification.id)).then(() => refetch());
+      void runMark(() => markNotificationRead(notification.id));
     }
   };
 
   const handleMarkAll = () => {
-    runMarkAll(() => markAllNotificationsRead(property.id)).then(() => refetch());
+    void runMarkAll(() => markAllNotificationsRead(property.id));
   };
 
   const renderItem = useCallback(
@@ -109,7 +115,8 @@ export function NotificationsScreen() {
           />
         </View>
       )}
-      <FlatList
+      {isLoading ? <View style={styles.list}><SkeletonCardList rows={5} /></View> : error && !notificationsData ?
+        <ErrorState message={error} onRetry={refetch} /> : <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
@@ -117,7 +124,7 @@ export function NotificationsScreen() {
         onRefresh={refresh}
         refreshing={isRefreshing}
         ListEmptyComponent={<EmptyState title="All caught up!" icon="bell-outline" />}
-      />
+      />}
     </Screen>
   );
 }

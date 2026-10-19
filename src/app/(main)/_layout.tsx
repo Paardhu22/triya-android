@@ -10,9 +10,10 @@ import { colors, fontFamilies } from '@/theme';
  * screen with a native header.
  */
 export default function MainLayout() {
-  const { user } = useAuth();
+  const { user, isRestoring } = useAuth();
   const { property } = useProperty();
 
+  if (isRestoring) return null;
   if (!user) return <Redirect href={"/(auth)/login" as any} />;
   if (!property) return <Redirect href={"/(auth)/select-property" as any} />;
 
@@ -20,6 +21,7 @@ export default function MainLayout() {
     <>
       <StatusBar style="dark" />
       <Stack
+        key={property.id}
         screenOptions={{
           headerShown: true,
           headerShadowVisible: false,

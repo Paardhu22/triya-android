@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/BrandLogo';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
@@ -11,7 +12,7 @@ import {
   enterItem,
   enterUp,
 } from '@/components';
-import { getPropertyStats } from '@/mocks';
+import { accessibleProperties } from '@/data/db';
 import { useAuth, useProperty } from '@/store';
 import { colors, spacing, borderRadius } from '@/theme';
 
@@ -33,11 +34,12 @@ export function SelectPropertyScreen() {
     <Screen scrollable background={colors.canvas}>
       <View style={styles.container}>
         <Animated.View entering={enterHeader()} style={styles.header}>
+          <BrandLogo />
           <Typography variant="overline" color="primary">
             Triya Manager
           </Typography>
           <Typography variant="h1" style={styles.headline}>
-            Select a property
+            Select a property<Typography color="primary">.</Typography>
           </Typography>
           <Typography variant="caption" color="textSecondary">
             Choose which PG you want to manage. You can switch anytime from the
@@ -62,7 +64,7 @@ export function SelectPropertyScreen() {
               <Animated.View key={property.id} entering={enterItem(index + 1)}>
                 <PropertyCard
                   property={property}
-                  stats={getPropertyStats(property.id)}
+                  stats={accessibleProperties().find(p => p.id === property.id)?.stats}
                   onPress={() => {
                     selectProperty(property);
                     router.replace('/');

@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/BrandLogo';
 import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
@@ -39,6 +40,7 @@ export function MoreScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        <BrandLogo />
         <LargeTitle title="More" scrollY={scrollY} />
 
         {user && (

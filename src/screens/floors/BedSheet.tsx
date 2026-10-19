@@ -16,7 +16,7 @@ import {
 } from '@/components';
 import { COLLECTION_STATE_META, PAYMENT_STATUS_META } from '@/constants';
 import { useAction } from '@/hooks';
-import { giveNotice, vacateBed, type FloorBed } from '@/mocks';
+import { giveNotice, vacateBed, type FloorBed } from '@/data';
 import { borderRadius, colors, spacing } from '@/theme';
 import {
   bedLocationLabel,
@@ -114,7 +114,7 @@ export function BedSheet({ bed, roomNumber, isFlat, visible, onClose }: BedSheet
               accessibilityRole="button"
               accessibilityLabel={`Open ${tenancy.tenant.fullName}'s profile`}
             >
-              <Avatar name={tenancy.tenant.fullName} uri={null} size="lg" />
+              <Avatar name={tenancy.tenant.fullName} uri={tenancy.tenant.photoUrl} size="lg" />
               <View style={styles.tenantText}>
                 <Typography variant="h3" numberOfLines={1}>
                   {tenancy.tenant.fullName}

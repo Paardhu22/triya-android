@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
-import type { FloorRoom } from '@/mocks';
+import type { FloorRoom } from '@/data';
 import { colors, fontFamilies, spacing, borderRadius, elevation } from '@/theme';
 
 export interface RoomCardProps {

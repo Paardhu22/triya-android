@@ -1,3 +1,4 @@
+import { openStoredFile } from '@/data/client';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -38,7 +39,7 @@ import {
   sendRentReminder,
   type CollectionRow,
   type InvoiceHistoryRow,
-} from '@/mocks';
+} from '@/data';
 import { useActiveProperty } from '@/store';
 import { colors, spacing, GUTTER } from '@/theme';
 import {
@@ -92,12 +93,12 @@ export function CollectionsScreen() {
 
   const dues = useCollections(property.id, month);
   // Reminders always describe today's position, whichever month is viewed.
-  const currentDues = useCollections(property.id);
+  const currentDues = useCollections(property.id, undefined, !isCurrentMonth);
   const invoicesQuery = useInvoiceHistory(property.id);
 
   const rows = useMemo(() => dues.data ?? [], [dues.data]);
   const invoices = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
-  const pendingCount = (currentDues.data ?? []).filter((r) => r.outstandingPaise > 0).length;
+  const pendingCount = ((isCurrentMonth ? dues.data : currentDues.data) ?? []).filter((r) => r.outstandingPaise > 0).length;
 
   const [segment, setSegment] = useState<Segment>('DUES');
   const [search, setSearch] = useState('');
@@ -438,6 +439,13 @@ export function CollectionsScreen() {
         actions={
           invoiceAction
             ? [
+                {
+                  label: 'Open invoice PDF', icon: 'file-pdf-box',
+                  onPress: async () => {
+                    try { await openStoredFile(invoiceAction.storageKey); }
+                    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not open invoice'); }
+                  },
+                },
                 {
                   label: invoiceAction.status === 'FAILED' ? 'Send on WhatsApp' : 'Resend on WhatsApp',
                   description:

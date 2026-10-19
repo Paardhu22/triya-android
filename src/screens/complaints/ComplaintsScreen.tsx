@@ -13,7 +13,7 @@ import { Typography } from '@/components/Typography';
 import { ComplaintCard } from '@/components/cards/ComplaintCard';
 import { GroupedItem } from '@/components/GroupedItem';
 import { useComplaints } from '@/hooks';
-import type { ComplaintListItem } from '@/mocks';
+import type { ComplaintListItem } from '@/data';
 import { useActiveProperty } from '@/store';
 import { colors, spacing, GUTTER } from '@/theme';
 import type { ComplaintPriority, ComplaintStatus } from '@/types';

@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import { BottomSheet, Button, TextInput, Typography } from '@/components';
 import { useAction } from '@/hooks';
-import { changePassword } from '@/mocks';
+import { changePassword } from '@/data';
 import { useAuth } from '@/store';
 import { colors, spacing } from '@/theme';
 
@@ -28,7 +28,9 @@ export function ChangePasswordSheet({ visible, onClose }: ChangePasswordSheetPro
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
     if (visible) {
       setCurrent('');
       setNext('');
@@ -36,7 +38,7 @@ export function ChangePasswordSheet({ visible, onClose }: ChangePasswordSheetPro
       setError(null);
       setDone(false);
     }
-  }, [visible]);
+  }
 
   async function onSubmit() {
     if (!user) return;

@@ -1,3 +1,5 @@
+import { AttachmentPicker } from '@/components/AttachmentPicker';
+import type { PickedFile } from '@/services/types';
 import { useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -11,7 +13,7 @@ import {
   toast,
 } from '@/components';
 import { useAction } from '@/hooks';
-import { assignTenantToBed, getBedRoomDefaults } from '@/mocks';
+import { assignTenantToBed, getBedRoomDefaults } from '@/data';
 import { useAuth } from '@/store';
 import { colors, spacing } from '@/theme';
 import type { PaymentMethod } from '@/types';
@@ -59,6 +61,7 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [cashAmount, setCashAmount] = useState('');
   const [onlineAmount, setOnlineAmount] = useState('');
+  const [photo, setPhoto] = useState<PickedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const firstMonthDue = parseRupees(rent) + parseRupees(maintenance);
@@ -86,7 +89,7 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
         onlineAmount:
           paymentStatus === 'PAID' && paymentMethod === 'SPLIT' ? parseRupees(onlineAmount) : undefined,
         recordedByName: user?.name,
-      }),
+      }, photo),
     );
     if (!result.ok) {
       setError(result.error);
@@ -241,6 +244,8 @@ export function AssignTenantForm({ bedId, onDone }: AssignTenantFormProps) {
           </Typography>
         </Animated.View>
       )}
+
+      <AttachmentPicker value={photo} onChange={setPhoto} label="KYC photo (optional)" imagesOnly disabled={busy} />
 
       {error && (
         <Typography variant="caption" colorValue={colors.error}>

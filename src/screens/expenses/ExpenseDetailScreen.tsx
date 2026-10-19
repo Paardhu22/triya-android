@@ -1,3 +1,6 @@
+import { openStoredFile } from '@/data/client';
+import { toast } from '@/components/Toast';
+import { ErrorState } from '@/components/ErrorState';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,7 +18,7 @@ import { Typography } from '@/components/Typography';
 import { enterHeader, enterItem } from '@/components/motion';
 import { expenseCategoryIcon } from '@/components/cards/ExpenseCard';
 import { useAction, useExpense } from '@/hooks';
-import { deleteExpense } from '@/mocks/actions';
+import { deleteExpense } from '@/data/actions';
 import { colors, spacing, borderRadius } from '@/theme';
 import { formatFullDate, formatINR } from '@/utils';
 
@@ -28,11 +31,13 @@ import { formatFullDate, formatINR } from '@/utils';
 export function ExpenseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { data: expense, isLoading } = useExpense(id);
+  const { data: expense, isLoading, error: loadError, refetch } = useExpense(id);
   const { busy: isDeleting, run: runDelete } = useAction();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!isLoading && !expense) return <Screen edges={['bottom']}><ErrorState message={loadError ?? 'Expense not found in this property.'} onRetry={refetch} /></Screen>;
 
   if (isLoading || !expense) {
     return (
@@ -121,6 +126,10 @@ export function ExpenseDetailScreen() {
       <Animated.View entering={enterItem(1)} style={styles.section}>
         <SectionHeader title="Actions" />
         <Card flat noPadding>
+          {expense.receiptKey && <ListItem title="View receipt" icon="file-document-outline" onPress={async () => {
+            try { await openStoredFile(expense.receiptKey!); }
+            catch (error) { toast.error(error instanceof Error ? error.message : 'Could not open receipt'); }
+          }} />}
           <ListItem
             title="Delete expense"
             icon="delete-outline"

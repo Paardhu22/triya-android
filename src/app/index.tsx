@@ -8,9 +8,10 @@ import { useAuth, useProperty } from '@/store';
  * goes straight to the dashboard.
  */
 export default function Index() {
-  const { user } = useAuth();
+  const { user, isRestoring } = useAuth();
   const { property } = useProperty();
 
+  if (isRestoring) return null;
   if (!user) return <Redirect href={"/(auth)/login" as any} />;
   if (!property) return <Redirect href={"/(auth)/select-property" as any} />;
   return <Redirect href={"/(main)/(tabs)/dashboard" as any} />;

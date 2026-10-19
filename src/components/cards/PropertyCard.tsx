@@ -1,8 +1,9 @@
+import { PropertyLogo } from '../PropertyLogo';
 import { Pressable, View, StyleSheet } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
-import type { PropertyStats } from '@/mocks';
+import type { PropertyStats } from '@/data';
 import { colors, spacing, borderRadius } from '@/theme';
 import type { Property } from '@/types';
 
@@ -39,9 +40,7 @@ export function PropertyCard({ property, stats, selected = false, onPress }: Pro
       accessibilityLabel={property.name}
       accessibilityState={{ selected }}
     >
-      <View style={styles.iconBox}>
-        <Icon name="home-city-outline" size={22} color={colors.primary} />
-      </View>
+      <PropertyLogo property={property} />
 
       <View style={styles.body}>
         <Typography variant="bodyMedium" numberOfLines={1}>

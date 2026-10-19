@@ -1,3 +1,4 @@
+import { ErrorState } from '@/components/ErrorState';
 import { useMemo, useState } from 'react';
 import { ScrollView, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -35,7 +36,7 @@ export function RoomDetailScreen() {
   const property = useActiveProperty();
   const { user } = useAuth();
   const canSetRent = user?.role === 'ADMIN' || user?.role === 'MANAGER';
-  const { data: room, isLoading } = useRoomDetail(id);
+  const { data: room, isLoading, error: loadError, refetch } = useRoomDetail(id);
 
   const [sheetBedId, setSheetBedId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -49,6 +50,8 @@ export function RoomDetailScreen() {
     for (const bed of room?.beds ?? []) result[bedVisualStatus(bed)] += 1;
     return result;
   }, [room]);
+
+  if (!isLoading && !room) return <Screen edges={['bottom']}><ErrorState message={loadError ?? 'Room not found in this property.'} onRetry={refetch} /></Screen>;
 
   if (isLoading || !room) {
     return (

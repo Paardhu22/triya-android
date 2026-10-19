@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import { BottomSheet, Button, TextInput, Typography } from '@/components';
 import { useAction } from '@/hooks';
-import { updatePropertySettings } from '@/mocks';
+import { updatePropertySettings } from '@/data';
 import { colors, spacing } from '@/theme';
 import type { Property } from '@/types';
 
@@ -29,7 +29,9 @@ export function EditPropertySheet({ visible, property, onClose }: EditPropertySh
   const [rulesText, setRulesText] = useState(property.rulesText ?? '');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
     if (visible) {
       setName(property.name);
       setAddress(property.address ?? '');
@@ -38,7 +40,7 @@ export function EditPropertySheet({ visible, property, onClose }: EditPropertySh
       setRulesText(property.rulesText ?? '');
       setError(null);
     }
-  }, [visible, property]);
+  }
 
   async function onSubmit() {
     const result = await run(() =>
