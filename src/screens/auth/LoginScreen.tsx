@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { request } from '@/data/client';
+import { useEffect, useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
 
 import {
-  BottomSheet,
   Button,
+  BottomSheet,
   Icon,
   Screen,
   TextInput,
@@ -13,39 +14,54 @@ import {
   enterHeader,
   enterUp,
 } from '@/components';
-import { listLoginUsers, type LoginUser } from '@/mocks';
 import { useAuth } from '@/store';
-import { colors, fontFamilies, spacing, borderRadius, elevation } from '@/theme';
+import { colors, fontFamilies, spacing, borderRadius } from '@/theme';
 
-/**
- * LoginScreen
- *
- * The mobile take on the web login page: the soft brand panel (overline,
- * headline, ghost "PG" glyph) above the bordered white sign-in card. Same workflow as login-form.tsx — pick a staff account, enter the
- * password, sign in. Property selection happens after auth, exactly as on
- * the web.
- *
- * Auth is mocked against the seeded staff accounts; the submit handler is
- * the only thing that changes when the real credentials endpoint is wired.
- */
+const DEFAULT_LOGIN_USERS = [
+  { name: 'Triya Admin', email: 'admin@triya.local', role: 'ADMIN' },
+  { name: 'Joystayz', email: 'joystayz@triya.local', role: 'MANAGER' },
+  { name: 'Frieden Co-Living', email: 'frieden@triya.local', role: 'MANAGER' },
+  { name: 'Cozy Gowlidoddy', email: 'cozy@triya.local', role: 'MANAGER' },
+  { name: 'testing', email: 'testing@triya.local', role: 'MANAGER' },
+];
+
+/** Sign in to the real Triya Manager account. */
 export function LoginScreen() {
   const router = useRouter();
   const { signIn } = useAuth();
 
-  const users = useMemo(() => listLoginUsers(), []);
-  const [selectedUser, setSelectedUser] = useState<LoginUser | null>(users[0] ?? null);
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@triya.local');
+  const [users, setUsers] = useState<{ name: string; email: string; role: string }[]>(DEFAULT_LOGIN_USERS);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [manualEmail, setManualEmail] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void request<{ users: typeof users }>('login')
+      .then(result => {
+        if (!cancelled && result?.users?.length) {
+          setUsers(result.users);
+          setEmail(current => current || result.users[0]?.email || 'admin@triya.local');
+        }
+      })
+      .catch(() => {
+        // Default users remain available so the account picker always works
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = selectedUser !== null && password.length > 0 && !submitting;
+  const selectedUser = users.find(u => u.email === email) ?? users[0];
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting;
 
   async function onSubmit() {
-    if (!selectedUser) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
-    const result = await signIn(selectedUser.email, password);
+    const result = await signIn(email, password);
     setSubmitting(false);
     if (!result.ok) {
       setError(result.error);
@@ -89,31 +105,69 @@ export function LoginScreen() {
             Welcome back. Enter your credentials to continue.
           </Typography>
 
-          {/* User selector (as on the web login form) */}
           <View style={styles.fieldGroup}>
-            <Typography
-              variant="captionMedium"
-              color="textSecondary"
-              style={styles.fieldLabel}
-            >
-              User
-            </Typography>
-            <Pressable
-              onPress={() => setPickerOpen(true)}
-              style={({ pressed }) => [styles.selector, pressed && styles.selectorPressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Select user"
-            >
-              <Typography
-                variant="body"
-                color={selectedUser ? 'text' : 'textTertiary'}
-                style={styles.selectorText}
-                numberOfLines={1}
-              >
-                {selectedUser?.name ?? 'Select a user'}
-              </Typography>
-              <Icon name="chevron-down" size={20} color={colors.textTertiary} />
-            </Pressable>
+            {!manualEmail ? (
+              <>
+                <View style={styles.selectorHeader}>
+                  <Typography variant="captionMedium" color="textSecondary">
+                    Select Account / PG
+                  </Typography>
+                  <Typography variant="small" color="textTertiary">
+                    Tap to switch PG
+                  </Typography>
+                </View>
+                <Pressable
+                  style={styles.selector}
+                  accessibilityRole="button"
+                  accessibilityLabel="Select user"
+                  onPress={() => setPickerOpen(true)}
+                >
+                  <View style={styles.selectorContent}>
+                    <View style={[styles.avatarBadge, selectedUser?.role === 'ADMIN' ? styles.adminAvatar : styles.managerAvatar]}>
+                      <Typography variant="small" style={{ fontWeight: '700', color: selectedUser?.role === 'ADMIN' ? '#B45309' : colors.textSecondary }}>
+                        {selectedUser?.name ? selectedUser.name.charAt(0).toUpperCase() : 'U'}
+                      </Typography>
+                    </View>
+                    <Typography variant="bodyMedium" style={styles.selectorText}>
+                      {selectedUser?.name ?? 'Select an account'}
+                    </Typography>
+                    <View style={[styles.roleTag, selectedUser?.role === 'ADMIN' ? styles.adminTag : styles.managerTag]}>
+                      <Typography variant="overline" style={selectedUser?.role === 'ADMIN' ? styles.adminTagText : styles.managerTagText}>
+                        {selectedUser?.role === 'ADMIN' ? 'Admin' : 'PG Manager'}
+                      </Typography>
+                    </View>
+                  </View>
+                  <Icon name="chevron-down" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => setManualEmail(true)}
+                  accessibilityRole="button"
+                  style={{ paddingTop: 6, alignSelf: 'flex-start' }}
+                >
+                  <Typography variant="small" color="primary">Use email instead</Typography>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@company.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="username"
+                />
+                <Pressable
+                  onPress={() => setManualEmail(false)}
+                  accessibilityRole="button"
+                  style={{ paddingTop: 6, alignSelf: 'flex-start' }}
+                >
+                  <Typography variant="small" color="primary">Choose from account list</Typography>
+                </Pressable>
+              </>
+            )}
           </View>
 
           {/* Password */}
@@ -146,42 +200,43 @@ export function LoginScreen() {
           />
 
           <Typography variant="small" color="textTertiary" style={styles.cardFooter}>
-            Select your account, then enter its password to continue.
+            Use the same account as Triya Manager on the web.
           </Typography>
         </Animated.View>
       </View>
 
-      {/* User picker */}
-      <BottomSheet
-        visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        title="Select user"
-      >
+      <BottomSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title="Select Account / PG">
         <View style={styles.options}>
           {users.map((user) => {
-            const isSelected = selectedUser?.email === user.email;
+            const isSelected = email === user.email;
+            const isAdmin = user.role === 'ADMIN';
             return (
               <Pressable
                 key={user.email}
-                onPress={() => {
-                  setSelectedUser(user);
-                  setPickerOpen(false);
-                }}
-                style={({ pressed }) => [
-                  styles.optionRow,
-                  isSelected && styles.optionSelected,
-                  pressed && !isSelected && styles.optionPressed,
-                ]}
+                style={[styles.optionRow, isSelected && styles.optionSelected]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
+                onPress={() => {
+                  setEmail(user.email);
+                  setPickerOpen(false);
+                }}
               >
-                <View style={styles.optionText}>
-                  <Typography variant="bodyMedium">{user.name}</Typography>
-                  <Typography variant="small" color="textSecondary">
-                    {user.email} · {user.role.toLowerCase()}
+                <View style={[styles.avatarBadge, isAdmin ? styles.adminAvatar : styles.managerAvatar]}>
+                  <Typography variant="small" style={{ fontWeight: '700', color: isAdmin ? '#B45309' : colors.textSecondary }}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                   </Typography>
                 </View>
-                {isSelected && <Icon name="check-circle" size={20} color={colors.primary} />}
+                <View style={styles.optionText}>
+                  <Typography variant="bodyMedium" style={{ fontWeight: '600' }}>
+                    {user.name}
+                  </Typography>
+                </View>
+                <View style={[styles.roleTag, isAdmin ? styles.adminTag : styles.managerTag]}>
+                  <Typography variant="overline" style={isAdmin ? styles.adminTagText : styles.managerTagText}>
+                    {isAdmin ? 'Admin' : 'PG Manager'}
+                  </Typography>
+                </View>
+                {isSelected && <Icon name="check-circle" size={18} color={colors.primary} style={{ marginLeft: 6 }} />}
               </Pressable>
             );
           })}
@@ -193,13 +248,16 @@ export function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: spacing.xl,
+    marginVertical: spacing.xl,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
   },
   hero: {
-    marginBottom: spacing.xl,
-    paddingTop: spacing.xl,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
   },
   ghost: {
     position: 'absolute',
@@ -224,11 +282,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.background,
-    borderRadius: borderRadius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
     padding: spacing.lg,
-    ...elevation.sm,
   },
   cardSubtitle: {
     marginTop: spacing.xs,
@@ -237,6 +291,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   fieldLabel: {
+    marginBottom: spacing.xs,
+  },
+  selectorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: spacing.xs,
   },
   selector: {
@@ -250,12 +310,57 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     backgroundColor: colors.background,
   },
-  selectorPressed: {
-    borderColor: colors.ring,
+  selectorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
   },
   selectorText: {
     flex: 1,
-    marginRight: spacing.sm,
+    fontWeight: '600',
+  },
+  avatarBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  adminAvatar: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  managerAvatar: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  roleTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  adminTag: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  adminTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  managerTag: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  managerTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
   },
   signInButton: {
     marginTop: spacing.lg,
@@ -270,7 +375,7 @@ const styles = StyleSheet.create({
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     padding: spacing.md,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
@@ -285,6 +390,5 @@ const styles = StyleSheet.create({
   },
   optionText: {
     flex: 1,
-    gap: 1,
   },
 });
