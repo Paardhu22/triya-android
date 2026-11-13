@@ -8,11 +8,12 @@ import { Manrope_800ExtraBold } from '@expo-google-fonts/manrope/800ExtraBold';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ToastHost } from '@/components/Toast';
+import { SessionRecovery } from '@/components/SessionRecovery';
 import { StartupIntro } from '@/components/StartupIntro';
 import { AuthProvider, PropertyProvider, useAuth } from '@/store';
 import { ThemeProvider } from '@/theme';
@@ -50,11 +51,17 @@ export default function RootLayout() {
 }
 
 function AppNavigator() {
-  const { isRestoring } = useAuth();
+  const { isRestoring, restoreError, retryRestore, signOut } = useAuth();
   const [introFinished, setIntroFinished] = useState(false);
   const [revealScreen, setRevealScreen] = useState(false);
   const finishIntro = useCallback(() => setIntroFinished(true), []);
   const reveal = useCallback(() => setRevealScreen(true), []);
+  useEffect(() => {
+    if (restoreError) void SplashScreen.hideAsync().catch(() => {});
+  }, [restoreError]);
+  if (restoreError) {
+    return <SessionRecovery message={restoreError} retrying={isRestoring} onRetry={() => { void retryRestore(); }} onSignOut={signOut} />;
+  }
   return (
     <View style={styles.root}>
       {revealScreen && <Stack screenOptions={{ headerShown: false }} />}

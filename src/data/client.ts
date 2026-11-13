@@ -25,24 +25,29 @@ export function apiBaseUrl() {
   if (!url || !/^https?:\/\//.test(url)) throw new Error('Set EXPO_PUBLIC_API_URL to your Triya Manager server URL.');
   return url;
 }
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+/** HTTP failures are distinguishable from connectivity/timeout errors. */
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = 'RequestError'; }
+}
+export async function request<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
+  const { timeoutMs = 30_000, ...init } = options;
   const controller = new AbortController();
   let timedOut = false;
-  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) controller.abort();
   const token = session?.token;
   try {
     const response = await fetch(`${apiBaseUrl()}/api/mobile/${path}`, {
-      ...options, signal: controller.signal,
+      ...init, signal: controller.signal,
       headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(propertyId ? { 'X-Triya-Property': propertyId } : {}), ...options.headers },
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       if (response.status === 401 && token && token === session?.token) expiredListeners.forEach(fn => fn());
-      throw new Error(data?.error ?? `Request failed (${response.status})`);
+      throw new RequestError(data?.error ?? `Request failed (${response.status})`, response.status);
     }
     if (data === null) throw new Error('The server returned an invalid JSON response. Please try again.');
     return data as T;
