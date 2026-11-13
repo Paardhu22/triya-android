@@ -527,7 +527,7 @@ function DueRow({ row, isFlat, onPress }: { row: CollectionRow; isFlat: boolean;
       android_ripple={{ color: colors.surfacePressed }}
       style={({ pressed }) => [styles.due, pressed && styles.duePressed]}
       accessibilityRole="button"
-      accessibilityLabel={`${row.tenant.fullName}, balance ${formatINR(row.balancePaise)}`}
+      accessibilityLabel={`${row.tenant.fullName}, ${bedLocationShort(row.roomNumber, row.bedLabel, isFlat)}, total owed ${formatINR(row.outstandingPaise)}, this month ${formatINR(row.balancePaise)}, earlier dues ${formatINR(row.earlierDuePaise)}`}
     >
       <View style={styles.dueMain}>
         <View style={styles.dueText}>
@@ -539,17 +539,19 @@ function DueRow({ row, isFlat, onPress }: { row: CollectionRow; isFlat: boolean;
           </Typography>
         </View>
         <View style={styles.dueRight}>
-          <Typography variant="number" colorValue={row.balancePaise > 0 ? colors.text : colors.textSecondary}>
-            {formatINR(row.balancePaise)}
+          <Typography variant="number" colorValue={row.outstandingPaise > 0 ? colors.text : colors.textSecondary}>
+            {formatINR(row.outstandingPaise)}
           </Typography>
-          <Typography variant="small" color="textTertiary">
-            balance
+          <Typography variant="small" color="textSecondary">
+            total owed
           </Typography>
         </View>
       </View>
 
       <View style={styles.dueMeta}>
-        <StatusBadge meta={COLLECTION_STATE_META[row.state]} size="sm" />
+        <StatusBadge meta={row.state === 'PAID' && row.earlierDuePaise > 0
+          ? { ...COLLECTION_STATE_META.PARTIAL, label: 'Month paid · earlier dues' }
+          : COLLECTION_STATE_META[row.state]} size="sm" />
         {row.state !== 'PAID' && (
           <Typography variant="smallMedium" colorValue={overdue ? colors.error : colors.textSecondary}>
             {overdue ? 'Overdue' : 'Due'} {formatDayMonth(row.dueDate)}
@@ -565,8 +567,8 @@ function DueRow({ row, isFlat, onPress }: { row: CollectionRow; isFlat: boolean;
       {row.earlierDuePaise > 0 && (
         <View style={styles.earlier}>
           <Icon name="history" size={13} color={colors.warning} />
-          <Typography variant="small" colorValue={colors.warning}>
-            + {formatINR(row.earlierDuePaise)} earlier ({row.earlierDueMonths.length} mo)
+          <Typography variant="small" color="textSecondary">
+            This month {formatINR(row.balancePaise)} · Earlier {formatINR(row.earlierDuePaise)} ({row.earlierDueMonths.length} mo)
           </Typography>
         </View>
       )}
