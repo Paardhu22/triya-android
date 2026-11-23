@@ -1,6 +1,7 @@
 import { Redirect, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
+import { useReducedMotionSetting } from '@/hooks/useReducedMotionSetting';
 import { useAuth, useProperty } from '@/store';
 import { colors, fontFamilies } from '@/theme';
 
@@ -12,6 +13,7 @@ import { colors, fontFamilies } from '@/theme';
 export default function MainLayout() {
   const { user, isRestoring } = useAuth();
   const { property } = useProperty();
+  const reducedMotion = useReducedMotionSetting();
 
   if (isRestoring) return null;
   if (!user) return <Redirect href={"/(auth)/login" as any} />;
@@ -30,10 +32,10 @@ export default function MainLayout() {
           headerTintColor: colors.text,
           headerBackButtonDisplayMode: 'minimal',
           contentStyle: { backgroundColor: colors.canvas },
-          animation: 'slide_from_right',
-          animationDuration: 280,
+          // Let each OS coordinate its native transition and back gesture.
+          animation: reducedMotion ? 'none' : 'default',
+          freezeOnBlur: true,
           gestureEnabled: true,
-          fullScreenGestureEnabled: true,
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

@@ -4,7 +4,6 @@ import { Pressable, View, StyleSheet, type StyleProp, type ViewStyle } from 'rea
 import { Icon, type IconName } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { colors, spacing } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export interface ListRowProps {
   title: string | ReactNode;
@@ -57,14 +56,7 @@ export function ListRow({
 
   return (
     <Pressable
-      onPress={
-        onPress
-          ? () => {
-              haptics.tap();
-              onPress();
-            }
-          : undefined
-      }
+      onPress={onPress}
       onLongPress={onLongPress}
       disabled={disabled || (!onPress && !onLongPress)}
       android_ripple={onPress ? { color: colors.surfacePressed } : undefined}

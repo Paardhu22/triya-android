@@ -1,7 +1,9 @@
 import { Tabs } from 'expo-router';
+import { Easing } from 'react-native';
 
 import { TabBar, type TabMeta } from '@/components/TabBar';
 import { useUnreadNotificationCount } from '@/hooks';
+import { useReducedMotionSetting } from '@/hooks/useReducedMotionSetting';
 import { useActiveProperty } from '@/store';
 import { colors } from '@/theme';
 
@@ -13,6 +15,7 @@ import { colors } from '@/theme';
 export default function TabsLayout() {
   const property = useActiveProperty();
   const { data: unread } = useUnreadNotificationCount(property.id);
+  const reducedMotion = useReducedMotionSetting();
 
   const meta: Record<string, TabMeta> = {
     dashboard: { icon: 'view-dashboard-outline', activeIcon: 'view-dashboard' },
@@ -28,10 +31,17 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      detachInactiveScreens
       tabBar={(props) => <TabBar {...props} meta={meta} />}
       screenOptions={{
         headerShown: false,
-        animation: 'shift',
+        animation: reducedMotion ? 'none' : 'fade',
+        transitionSpec: {
+          animation: 'timing',
+          config: { duration: reducedMotion ? 0 : 160, easing: Easing.out(Easing.quad) },
+        },
+        lazy: true,
+        freezeOnBlur: true,
         sceneStyle: { backgroundColor: colors.canvas },
       }}
     >

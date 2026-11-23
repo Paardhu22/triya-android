@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   Animated,
   View,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 
 import { colors, spacing, borderRadius } from '@/theme';
+import { useReducedMotionSetting } from '@/hooks/useReducedMotionSetting';
 
 export interface SkeletonProps {
   width?: DimensionValue;
@@ -31,17 +33,22 @@ export interface SkeletonProps {
  */
 export function Skeleton({ width = '100%', height = 14, radius = 6, style }: SkeletonProps) {
   const [opacity] = useState(() => new Animated.Value(0.5));
+  const reducedMotion = useReducedMotionSetting();
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    if (reducedMotion) {
+      opacity.setValue(0.65);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 650, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.5, duration: 650, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 650, useNativeDriver: true, isInteraction: false }),
+        Animated.timing(opacity, { toValue: 0.5, duration: 650, useNativeDriver: true, isInteraction: false }),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [opacity]);
+  }, [opacity, reducedMotion]));
 
   return (
     <Animated.View

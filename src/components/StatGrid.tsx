@@ -2,15 +2,14 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 
 import { Typography } from '@/components/Typography';
-import { useCountUp } from '@/hooks/useCountUp';
 import { colors, spacing } from '@/theme';
 
 export interface StatCellProps {
   /** Uppercase label (web StatCard label). */
   label: string;
-  /** Pre-formatted value, or a number to count up to. */
+  /** Pre-formatted value, or a number to format. */
   value: string | number;
-  /** Formats a counting numeric value (e.g. formatINRCompact). */
+  /** Formats a numeric value (e.g. formatINRCompact). */
   format?: (value: number) => string;
   /** Muted explanatory line under the figure. */
   hint?: string;
@@ -22,12 +21,12 @@ export interface StatCellProps {
 
 /**
  * One figure in a StatGrid — the web's Swiss StatCard: small uppercase label,
- * large tight tabular figure, muted hint. Numeric values count up on mount.
+ * large tight tabular figure, muted hint. Figures render their final value
+ * immediately, avoiding per-frame React renders during page transitions.
  */
 export function StatCell({ label, value, format, hint, valueColor, onPress, actionLabel }: StatCellProps) {
-  const counted = useCountUp(typeof value === 'number' ? value : 0);
   const display =
-    typeof value === 'number' ? (format ? format(counted) : String(counted)) : value;
+    typeof value === 'number' ? (format ? format(value) : String(value)) : value;
 
   const content = (
     <View style={styles.cell}>

@@ -6,7 +6,6 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
-import { haptics } from '@/utils/haptics';
 import type { Property } from '@/types';
 
 export interface PropertySelectorProps {
@@ -36,7 +35,6 @@ export function PropertySelector({ properties, selectedId, onSelect }: PropertyS
       <Pressable
         onPress={() => {
           if (!canSwitch) return;
-          haptics.tap();
           setOpen(true);
         }}
         disabled={!canSwitch}

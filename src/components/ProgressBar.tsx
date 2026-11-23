@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -36,11 +37,13 @@ export function ProgressBar({
 
   useEffect(() => {
     progress.set(
-      withDelay(delay, withTiming(clamped, { duration: 650, easing: Easing.bezier(0.2, 0, 0, 1) })),
+      withDelay(Math.min(delay, 120), withTiming(clamped / 100, { duration: 360, easing: Easing.bezier(0.2, 0, 0, 1) })),
     );
+    return () => cancelAnimation(progress);
   }, [clamped, delay, progress]);
 
-  const fill = useAnimatedStyle(() => ({ width: `${progress.get()}%` }));
+  // Scaling keeps the track's layout fixed throughout the animation.
+  const fill = useAnimatedStyle(() => ({ transform: [{ scaleX: progress.get() }] }));
 
   return (
     <View style={[styles.track, { height, borderRadius: height / 2, backgroundColor: trackColor }]}>
@@ -55,6 +58,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   fill: {
+    width: '100%',
     height: '100%',
+    transformOrigin: 'left center',
   },
 });

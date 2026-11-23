@@ -1,7 +1,8 @@
 import { createElement, memo, useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, G, Path, Pattern, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, G, Path, Pattern, Rect, Text as SvgText } from 'react-native-svg';
 import { Icon, Typography } from '@/components';
+import { BedGlyph } from '@/components/BedGlyph';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import type { FloorRoom } from '@/data';
 import { colors, fontFamilies, spacing } from '@/theme';
@@ -103,13 +104,7 @@ function PlanRoom({ room, x, y, height, bottomDoor, pattern, isFlat, onRoom, onB
       return <PlanAction key={bed.id} transform={`translate(${bx} ${by})`} onPress={() => onBed(bed.id)}
         label={`${isFlat ? 'Flat' : 'Room'} ${room.number}, bed ${bed.label}: ${meta.label}${bed.tenancy ? `, ${bed.tenancy.tenant.fullName}` : ', assign tenant'}`}>
         <Rect x={-10} y={-8} width={bedWidth + 20} height={bedHeight + 26} fill="transparent" />
-        <Rect x={-2} y={-3} width={bedWidth + 4} height={9} rx={2} fill="#b6a18d" />
-        <Rect width={bedWidth} height={bedHeight} rx={4} fill="#fff" stroke="#b8bdc7" />
-        <Rect x={5} y={5} width={bedWidth - 10} height={bedHeight * 0.2} rx={3} fill="#f9fafb" stroke="#dce0e6" strokeWidth={0.8} />
-        <Rect x={2} y={bedHeight * 0.4} width={bedWidth - 4} height={bedHeight * 0.6 - 2} rx={3} fill={meta.color} fillOpacity={0.16} />
-        <Path d={`M 2 ${bedHeight * 0.4} h ${bedWidth - 4}`} stroke={meta.color} strokeWidth={4} />
-        <Circle cx={bedWidth / 2} cy={bedHeight * 0.7} r={3} fill={meta.color} />
-        <SvgText x={bedWidth / 2} y={bedHeight + 13} textAnchor="middle" fontSize={11} fontFamily={fontFamilies.semibold} fill={colors.textSecondary}>{bed.label}</SvgText>
+        <BedGlyph width={bedWidth} label={bed.label} status={status} />
       </PlanAction>;
     })}
   </G>;

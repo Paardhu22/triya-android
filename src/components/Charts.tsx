@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -10,7 +11,6 @@ import Animated, {
 
 import { Typography } from '@/components/Typography';
 import { colors, spacing } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 const EASE = Easing.bezier(0.2, 0, 0, 1);
 
@@ -45,12 +45,14 @@ export interface BarDatum {
 
 function GrowBar({
   height,
+  plotHeight,
   color,
   width,
   delay,
   dimmed,
 }: {
   height: number;
+  plotHeight: number;
   color: string;
   width: number;
   delay: number;
@@ -59,15 +61,20 @@ function GrowBar({
   const h = useSharedValue(0);
   const o = useSharedValue(1);
   useEffect(() => {
-    h.set(withDelay(delay, withTiming(height, { duration: 620, easing: EASE })));
-  }, [delay, h, height]);
+    h.set(withDelay(Math.min(delay, 120), withTiming(height / plotHeight, { duration: 360, easing: EASE })));
+    return () => cancelAnimation(h);
+  }, [delay, h, height, plotHeight]);
   useEffect(() => {
     o.set(withTiming(dimmed ? 0.28 : 1, { duration: 180 }));
+    return () => cancelAnimation(o);
   }, [dimmed, o]);
-  const style = useAnimatedStyle(() => ({ height: h.get(), opacity: o.get() }));
+  const style = useAnimatedStyle(() => ({ transform: [{ scaleY: h.get() }], opacity: o.get() }));
   return (
     <Animated.View
-      style={[{ width, backgroundColor: color, borderTopLeftRadius: 3, borderTopRightRadius: 3 }, style]}
+      style={[{
+        width, height: plotHeight, backgroundColor: color,
+        borderTopLeftRadius: 3, borderTopRightRadius: 3, transformOrigin: 'center bottom',
+      }, style]}
     />
   );
 }
@@ -149,7 +156,6 @@ export function BarChart({
                 key={d.label + i}
                 style={styles.column}
                 onPress={() => {
-                  if (i !== selected) haptics.selection();
                   setSelected(i);
                 }}
                 accessibilityRole="button"
@@ -162,6 +168,7 @@ export function BarChart({
                     <GrowBar
                       key={s.key}
                       height={Math.max(2, ((d.values[s.key] ?? 0) / max) * height)}
+                      plotHeight={height}
                       color={s.color}
                       width={barWidth}
                       delay={i * 50 + si * 30}
@@ -204,13 +211,9 @@ export interface StackRow {
   available: number;
 }
 
-function Segment({ flex, color, delay }: { flex: number; color: string; delay: number }) {
-  const f = useSharedValue(0);
-  useEffect(() => {
-    f.set(withDelay(delay, withTiming(flex, { duration: 650, easing: EASE })));
-  }, [delay, f, flex]);
-  const style = useAnimatedStyle(() => ({ flexGrow: f.get() }));
-  return <Animated.View style={[styles.segment, { backgroundColor: color }, style]} />;
+function Segment({ flex, color }: { flex: number; color: string }) {
+  // Keep the proportions stable; animating flex recalculates every row's layout.
+  return <View style={[styles.segment, { backgroundColor: color, flexGrow: flex }]} />;
 }
 
 /**
@@ -221,7 +224,7 @@ function Segment({ flex, color, delay }: { flex: number; color: string; delay: n
 export function OccupancyBars({ rows }: { rows: StackRow[] }) {
   return (
     <View style={styles.stackList}>
-      {rows.map((r, i) => {
+      {rows.map((r) => {
         const total = r.occupied + r.available;
         return (
           <View key={r.label} style={styles.stackRow}>
@@ -229,9 +232,9 @@ export function OccupancyBars({ rows }: { rows: StackRow[] }) {
               {r.label}
             </Typography>
             <View style={styles.stackTrack}>
-              {r.occupied > 0 && <Segment flex={r.occupied} color={colors.chart1} delay={i * 60} />}
+              {r.occupied > 0 && <Segment flex={r.occupied} color={colors.chart1} />}
               {r.available > 0 && (
-                <Segment flex={r.available} color={colors.chart4} delay={i * 60 + 40} />
+                <Segment flex={r.available} color={colors.chart4} />
               )}
             </View>
             <Typography variant="numberSmall" color="textSecondary" style={styles.stackTip}>

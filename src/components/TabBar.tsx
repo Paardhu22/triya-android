@@ -10,7 +10,6 @@ import Animated, {
 import { Icon, type IconName } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { colors, fontFamilies } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 
@@ -78,7 +77,7 @@ function TabItem({
 
 /**
  * TabBar — the app's bottom navigation. A Material-3-style blue-tint indicator
- * springs behind the active icon, selection ticks a haptic, and the bar sits
+ * springs behind the active icon, and the bar sits
  * on white with a single hairline, matching the web's quiet sidebar.
  */
 export function TabBar({
@@ -110,7 +109,6 @@ export function TabBar({
                 canPreventDefault: true,
               });
               if (!focused && !event.defaultPrevented) {
-                haptics.selection();
                 navigation.navigate(route.name, route.params);
               }
             }}

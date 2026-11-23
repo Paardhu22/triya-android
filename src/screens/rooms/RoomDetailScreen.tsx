@@ -60,8 +60,8 @@ export function RoomDetailScreen() {
           <Skeleton height={40} width={160} />
           <Skeleton height={96} radius={borderRadius.lg} />
           <View style={styles.bedRow}>
-            <Skeleton height={168} radius={borderRadius.lg} style={styles.flex} />
-            <Skeleton height={168} radius={borderRadius.lg} style={styles.flex} />
+            <Skeleton height={228} radius={borderRadius.lg} style={styles.flex} />
+            <Skeleton height={228} radius={borderRadius.lg} style={styles.flex} />
           </View>
         </View>
       </Screen>

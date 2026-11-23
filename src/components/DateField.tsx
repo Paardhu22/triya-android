@@ -9,7 +9,6 @@ import { TextInput } from '@/components/TextInput';
 import { Typography } from '@/components/Typography';
 import { borderRadius, colors, spacing } from '@/theme';
 import { formatDateTime, formatFullDate, toISODateOnly } from '@/utils';
-import { haptics } from '@/utils/haptics';
 
 export interface DateFieldProps {
   label: string;
@@ -81,7 +80,6 @@ export function DateField({
 
   function open() {
     if (disabled) return;
-    haptics.tap();
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value,

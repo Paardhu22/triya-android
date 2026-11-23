@@ -4,7 +4,6 @@ import Animated, { ZoomIn } from 'react-native-reanimated';
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { borderRadius, colors, spacing } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export interface CheckboxRowProps {
   checked: boolean;
@@ -19,7 +18,6 @@ export function CheckboxRow({ checked, onChange, label, description, disabled }:
   return (
     <Pressable
       onPress={() => {
-        haptics.selection();
         onChange(!checked);
       }}
       disabled={disabled}

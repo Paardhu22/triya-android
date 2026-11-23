@@ -15,7 +15,6 @@ import { Typography } from '@/components/Typography';
 import { useUnreadNotificationCount } from '@/hooks/useQueries';
 import { useProperty } from '@/store';
 import { colors, spacing, GUTTER } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 /** Scroll distance over which the large title hands over to the compact one. */
 const COLLAPSE = 44;
@@ -87,7 +86,6 @@ export function TopBar({ title, scrollY, showPropertySelector = true, action }: 
         {action}
         <Pressable
           onPress={() => {
-            haptics.tap();
             router.push('/(main)/notifications' as never);
           }}
           style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}

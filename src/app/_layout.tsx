@@ -15,8 +15,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastHost } from '@/components/Toast';
 import { SessionRecovery } from '@/components/SessionRecovery';
 import { StartupIntro } from '@/components/StartupIntro';
+import { MotionProvider, useReducedMotionSetting } from '@/hooks/useReducedMotionSetting';
 import { AuthProvider, PropertyProvider, useAuth } from '@/store';
-import { ThemeProvider } from '@/theme';
+import { colors, ThemeProvider } from '@/theme';
 
 // Follow the same host as Metro for local development; an explicit API URL always wins.
 if (__DEV__ && Constants.expoConfig?.hostUri) {
@@ -39,12 +40,14 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider>
-        <AuthProvider>
-          <PropertyProvider>
-            <AppNavigator />
-            <ToastHost />
-          </PropertyProvider>
-        </AuthProvider>
+        <MotionProvider>
+          <AuthProvider>
+            <PropertyProvider>
+              <AppNavigator />
+              <ToastHost />
+            </PropertyProvider>
+          </AuthProvider>
+        </MotionProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
@@ -52,6 +55,7 @@ export default function RootLayout() {
 
 function AppNavigator() {
   const { isRestoring, restoreError, retryRestore, signOut } = useAuth();
+  const reducedMotion = useReducedMotionSetting();
   const [introFinished, setIntroFinished] = useState(false);
   const [revealScreen, setRevealScreen] = useState(false);
   const finishIntro = useCallback(() => setIntroFinished(true), []);
@@ -64,7 +68,14 @@ function AppNavigator() {
   }
   return (
     <View style={styles.root}>
-      {revealScreen && <Stack screenOptions={{ headerShown: false }} />}
+      {revealScreen && (
+        <Stack screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.canvas },
+          animation: reducedMotion ? 'none' : 'fade',
+          animationDuration: 180,
+        }} />
+      )}
       {!introFinished && (
         <View style={StyleSheet.absoluteFill}>
           <StartupIntro ready={!isRestoring} onReveal={reveal} onFinish={finishIntro} />

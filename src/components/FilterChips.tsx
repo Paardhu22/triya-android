@@ -9,7 +9,6 @@ import {
 
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export interface ChipOption<T extends string> {
   value: T;
@@ -55,7 +54,6 @@ export function FilterChips<T extends string>({
             key={option.value}
             onPress={() => {
               if (!selected) {
-                haptics.selection();
                 onChange(option.value);
               }
             }}

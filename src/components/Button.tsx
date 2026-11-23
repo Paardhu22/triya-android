@@ -4,7 +4,6 @@ import { Icon, type IconName } from '@/components/Icon';
 import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -59,7 +58,6 @@ export function Button({
   disabled = false,
   textColor: textColorOverride,
   style,
-  onPressIn,
   ...rest
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -87,10 +85,6 @@ export function Button({
         style as import('react-native').ViewStyle,
       ]}
       disabled={isDisabled}
-      onPressIn={(e) => {
-        haptics.tap();
-        onPressIn?.(e);
-      }}
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityState={{ disabled: isDisabled, busy: loading }}

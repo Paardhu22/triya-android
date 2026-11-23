@@ -31,7 +31,6 @@ import {
   matchesPaymentFilter,
   type PaymentFilter,
 } from '@/utils';
-import { haptics } from '@/utils/haptics';
 
 type StatusFilter = 'ALL' | 'CURRENT' | 'PAST';
 type SortMode = 'name' | 'recent';
@@ -119,7 +118,6 @@ export function TenantListScreen() {
         right={
           <Pressable
             onPress={() => {
-              haptics.selection();
               setSort((s) => (s === 'name' ? 'recent' : 'name'));
             }}
             style={({ pressed }) => [styles.sort, pressed && styles.sortPressed]}

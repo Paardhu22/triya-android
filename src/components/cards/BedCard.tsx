@@ -1,10 +1,12 @@
 import { View, StyleSheet } from 'react-native';
+import Svg from 'react-native-svg';
 
+import { BedGlyph } from '@/components/BedGlyph';
 import { PressableScale } from '@/components/PressableScale';
 import { Typography } from '@/components/Typography';
 import { BED_VISUAL_STATUS_META, bedVisualStatus } from '@/constants';
 import type { FloorBed } from '@/data';
-import { borderRadius, colors, elevation, spacing } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import { formatINR } from '@/utils';
 
 export interface BedCardProps {
@@ -17,10 +19,8 @@ export interface BedCardProps {
 /**
  * BedCard component.
  *
- * One bed drawn like the web room view's bed: a pillow band at the head with
- * the bed label, the mattress carrying the occupant and rent, and the status
- * word at the foot in the Floor Manager's bed tone. Vacant beds invite a
- * check-in.
+ * The Floor Manager's schematic bed with tenant details below it. Both views
+ * use BedGlyph so the pillow, blanket, status color, and label stay consistent.
  */
 export function BedCard({ bed, isFlat, onPress }: BedCardProps) {
   const status = bedVisualStatus(bed);
@@ -35,15 +35,13 @@ export function BedCard({ bed, isFlat, onPress }: BedCardProps) {
       accessibilityRole="button"
       accessibilityLabel={`${isFlat ? 'Unit' : `Bed ${bed.label}`}, ${visual.label}${tenancy ? `, ${tenancy.tenant.fullName}` : ''}`}
     >
-      <View style={[styles.head, { backgroundColor: visual.softColor }]}>
-        <View style={styles.pillow}>
-          <Typography variant="overline" style={styles.pillowText}>
-            {isFlat ? 'Unit' : `Bed ${bed.label}`}
-          </Typography>
-        </View>
+      <View style={styles.illustration}>
+        <Svg width={88} height={122} viewBox="-12 -8 88 122" accessible={false}>
+          <BedGlyph width={64} label={isFlat ? 'Unit' : `Bed ${bed.label}`} status={status} />
+        </Svg>
       </View>
 
-      <View style={styles.mattress}>
+      <View style={styles.details}>
         {tenancy ? (
           <>
             <Typography variant="bodySemibold" numberOfLines={1} style={styles.center}>
@@ -78,33 +76,18 @@ export function BedCard({ bed, isFlat, onPress }: BedCardProps) {
 const styles = StyleSheet.create({
   bed: {
     flex: 1,
-    minHeight: 168,
-    borderRadius: borderRadius.lg + 2,
+    borderRadius: borderRadius.lg,
     backgroundColor: colors.background,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     overflow: 'hidden',
-    ...elevation.xs,
   },
-  head: {
+  illustration: {
     alignItems: 'center',
-    paddingVertical: spacing.sm + 4,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#f7f3ed',
   },
-  pillow: {
-    minWidth: 76,
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: 6,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.background,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(40, 43, 48, 0.08)',
-  },
-  pillowText: {
-    color: colors.text,
-    letterSpacing: 0.6,
-  },
-  mattress: {
+  details: {
     flex: 1,
     justifyContent: 'center',
     gap: 3,

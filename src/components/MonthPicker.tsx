@@ -5,7 +5,6 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { Icon } from '@/components/Icon';
 import { Typography } from '@/components/Typography';
 import { borderRadius, colors, spacing } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export interface MonthOption {
   value: string;
@@ -40,7 +39,6 @@ export function MonthPicker({
     <>
       <Pressable
         onPress={() => {
-          haptics.tap();
           setOpen(true);
         }}
         style={({ pressed }) => [styles.trigger, pressed && styles.triggerPressed]}
@@ -75,7 +73,6 @@ export function MonthPicker({
             return (
               <Pressable
                 onPress={() => {
-                  haptics.selection();
                   setOpen(false);
                   if (!isSelected) onChange(item.value);
                 }}

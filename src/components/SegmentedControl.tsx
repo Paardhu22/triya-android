@@ -16,7 +16,6 @@ import Animated, {
 
 import { Typography } from '@/components/Typography';
 import { colors, spacing, borderRadius, elevation } from '@/theme';
-import { haptics } from '@/utils/haptics';
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -71,7 +70,6 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             onPress={() => {
               if (!selected) {
-                haptics.selection();
                 onChange(option.value);
               }
             }}

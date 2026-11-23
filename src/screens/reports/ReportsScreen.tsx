@@ -39,7 +39,6 @@ import {
   type PaymentFilter,
 } from '@/utils';
 import { toCsv, shareCsv } from '@/services/export';
-import { haptics } from '@/utils/haptics';
 
 type Tab = 'floor' | 'room' | 'tenant';
 type Row = ReportFloorRow | ReportRoomRow | ReportTenantRow;
@@ -82,7 +81,6 @@ export function ReportsScreen() {
 
   async function onExport() {
     if (!report) return;
-    haptics.tap();
     let csv: string;
     if (tab === 'floor') {
       csv = toCsv([
